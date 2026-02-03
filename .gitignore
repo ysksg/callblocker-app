@@ -1,0 +1,51 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+app/release/
+
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file (sdk.dir is not checked in)
+local.properties
+
+# Proguard support
+proguard/
+proguard-project.txt
+
+# IntelliJ IDEA / Android Studio
+*.iml
+.idea/
+# Keep some useful idea files if needed, but generally exclude .idea folder for personal projects to avoid conflicts
+# or allow specific files like code styles if shared:
+# !.idea/codeStyles/
+# !.idea/copyright/
+# !.idea/scopes/
+
+# Misc
+.DS_Store
+/captures
+.externalNativeBuild
+.cxx
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# vscode
+.vscode/
