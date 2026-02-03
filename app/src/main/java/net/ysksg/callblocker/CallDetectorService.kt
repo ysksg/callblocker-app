@@ -16,8 +16,8 @@ import kotlinx.coroutines.launch
 class CallDetectorService : CallScreeningService() {
 
     override fun onScreenCall(callDetails: Call.Details) {
-        val rawNumber = callDetails.handle?.schemeSpecificPart
-        Log.i("CallDetectorService", "onScreenCall received. Raw number: $rawNumber, Direction: ${callDetails.callDirection}")
+        val originalRawNumber = callDetails.handle?.schemeSpecificPart
+        Log.i("CallDetectorService", "onScreenCall received. Raw number: $originalRawNumber, Direction: ${callDetails.callDirection}")
         
         // 発信時は何もしない (ブロック判定もオーバーレイ表示もしない)
         if (callDetails.callDirection != Call.Details.DIRECTION_INCOMING) {
@@ -28,10 +28,9 @@ class CallDetectorService : CallScreeningService() {
              return
         }
         
-        if (rawNumber == null) {
-            Log.w("CallDetectorService", "Phone number is null, allowing call.")
-            respondToCall(callDetails, CallResponse.Builder().build())
-            return
+        val rawNumber = originalRawNumber ?: ""
+        if (originalRawNumber == null) {
+            Log.w("CallDetectorService", "Phone number is null, checking rules with empty string.")
         }
 
         val repository = net.ysksg.callblocker.data.BlockRuleRepository(applicationContext)

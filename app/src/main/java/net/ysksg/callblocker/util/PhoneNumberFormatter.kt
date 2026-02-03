@@ -14,6 +14,7 @@ object PhoneNumberFormatter {
      * 海外の番号であれば +1 234-567-8900 のような国際形式(INTERNATIONAL)
      */
     fun format(number: String, defaultRegion: String = "JP"): String {
+        if (number.isEmpty()) return "非通知"
         try {
             // パースを試みる
             // "+81..." のような国際形式は自動判別される
