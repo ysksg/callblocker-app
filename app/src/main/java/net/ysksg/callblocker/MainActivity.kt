@@ -68,7 +68,7 @@ fun MainScreen() {
 
     // State
     var isOverlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
-    var isCallScreeningGranted by remember { mutableStateOf(checkCallScreeningRole(context)) }
+    var isCallScreeningGranted by remember { mutableStateOf<Boolean>(checkCallScreeningRole(context)) }
     var isContactPermissionGranted by remember {
         mutableStateOf(context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
     }
@@ -381,7 +381,9 @@ fun RuleSettingsScreen(
     }
 
     // Sync adapter data when external rules change (e.g. added/deleted/toggled)
-    LaunchedEffect(rules) {
+    // Sync adapter data when external rules change
+    // Using side effect to update adapter ensures we don't recreate the view
+    SideEffect {
         adapter.updateRules(rules)
     }
 
@@ -397,6 +399,20 @@ fun RuleSettingsScreen(
                 text = { Text("ルール追加") },
                 containerColor = MaterialTheme.colorScheme.primaryContainer
             )
+        },
+        topBar = {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp) // Add spacing below the header
+            ) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("ルールは上から順に評価されます。\n長押ししてドラッグで並べ替えられます。", style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
     ) { padding ->
         Column(
@@ -404,13 +420,7 @@ fun RuleSettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("ルールは上から順に評価されます。\n長押ししてドラッグで並べ替えられます。", style = MaterialTheme.typography.bodySmall)
-                }
-            }
+
             
             if (rules.isEmpty()) {
                 EmptyStateMessage("ルールはありません。")
@@ -425,7 +435,7 @@ fun RuleSettingsScreen(
                             touchHelper.attachToRecyclerView(this)
                         }
                     },
-                    modifier = Modifier.fillMaxSize().padding(bottom=80.dp)
+                    modifier = Modifier.weight(1f).fillMaxWidth()
                 )
             }
         }
@@ -477,14 +487,33 @@ class RuleAdapter(
     private val rules = initialRules
 
     fun updateRules(newRules: List<BlockRule>) {
-        if (rules != newRules) {
-            rules.clear()
-            rules.addAll(newRules)
-            notifyDataSetChanged()
-        }
+        val diffCallback = RuleDiffCallback(rules, newRules)
+        val diffResult = androidx.recyclerview.widget.DiffUtil.calculateDiff(diffCallback)
+        
+        rules.clear()
+        rules.addAll(newRules)
+        diffResult.dispatchUpdatesTo(this)
     }
 
-    class RuleViewHolder(val composeView: androidx.compose.ui.platform.ComposeView) : RecyclerView.ViewHolder(composeView)
+    inner class RuleViewHolder(val composeView: androidx.compose.ui.platform.ComposeView) : RecyclerView.ViewHolder(composeView) {
+        fun bind(rule: BlockRule) {
+            composeView.setContent {
+                // Re-use existing RuleCard composable
+                RuleCard(
+                    rule = rule,
+                    index = adapterPosition,
+                    totalCount = itemCount,
+                    onToggle = { 
+                        val updated = rule.copy(isEnabled = !rule.isEnabled)
+                        // Callback to parent
+                        onUpdateRule(updated)
+                    },
+                    onEdit = { onEditRule(rule) },
+                    onDelete = { onDeleteRule(rule.id) }
+                )
+            }
+        }
+    }
 
     override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int): RuleViewHolder {
         val composeView = androidx.compose.ui.platform.ComposeView(parent.context).apply {
@@ -498,20 +527,12 @@ class RuleAdapter(
 
     override fun onBindViewHolder(holder: RuleViewHolder, position: Int) {
         val rule = rules[position]
-        holder.composeView.setContent {
-            // Re-use existing RuleCard composable
-            RuleCard(
-                rule = rule,
-                index = position,
-                totalCount = rules.size,
-                onToggle = { 
-                    val updated = rule.copy(isEnabled = !rule.isEnabled)
-                    onUpdateRule(updated)
-                },
-                onEdit = { onEditRule(rule) },
-                onDelete = { onDeleteRule(rule.id) }
-            )
-        }
+        holder.bind(rule)
+    }
+
+    override fun onViewRecycled(holder: RuleViewHolder) {
+        holder.composeView.disposeComposition()
+        super.onViewRecycled(holder)
     }
 
     override fun getItemCount(): Int = rules.size
@@ -531,6 +552,30 @@ class RuleAdapter(
 
     fun onDragComplete() {
         onSwapRules(rules.toList())
+    }
+
+    // Helper to get access to onUpdateRule from ViewHolder
+    private fun getOnUpdateRule() = onUpdateRule
+    private fun getOnEditRule() = onEditRule
+    private fun getOnDeleteRule() = onDeleteRule
+}
+
+class RuleDiffCallback(
+    private val oldList: List<BlockRule>,
+    private val newList: List<BlockRule>
+) : androidx.recyclerview.widget.DiffUtil.Callback() {
+
+    override fun getOldListSize(): Int = oldList.size
+    override fun getNewListSize(): Int = newList.size
+
+    override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+        // IDで比較
+        return oldList[oldItemPosition].id == newList[newItemPosition].id
+    }
+
+    override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+        // データクラスなので equals() で比較可能
+        return oldList[oldItemPosition] == newList[newItemPosition]
     }
 }
 
