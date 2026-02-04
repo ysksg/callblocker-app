@@ -79,6 +79,9 @@ class BlockRuleRepository(private val context: Context) {
                         is ContactCondition -> {
                             // No extra properties
                         }
+                        is AiCondition -> {
+                            condObj.put("keyword", condition.keyword)
+                        }
                         // CountryCodeCondition is removed
                     }
                     conditionsArray.put(condObj)
@@ -124,6 +127,12 @@ class BlockRuleRepository(private val context: Context) {
                                 if (!isRegistered) effectiveInverse = true
                             }
                             rule.conditions.add(ContactCondition(effectiveInverse))
+                        }
+                        "ai" -> {
+                             val keyword = condObj.optString("keyword", "")
+                             if (keyword.isNotEmpty()) {
+                                 rule.conditions.add(AiCondition(keyword, isInverse))
+                             }
                         }
                         "country" -> {
                             // Convert to Regex if possible, or skip
@@ -215,6 +224,22 @@ class BlockRuleRepository(private val context: Context) {
                 is ContactCondition -> {
                     val hasContact = uniqueList.any { isContactExists(it) }
                     hasContact
+                }
+                is AiCondition -> {
+                    // Make a blocking network call to Gemini
+                    // NOTE: This will delay the call screening process.
+                    val geminiRepo = GeminiRepository(context)
+                    val result = kotlinx.coroutines.runBlocking {
+                         // Use the original number for AI check
+                         // Try formatted E164 first if available, else raw
+                         val targetNumber = uniqueList.firstOrNull { it.startsWith("+") } ?: uniqueList.firstOrNull() ?: ""
+                         geminiRepo.checkPhoneNumber(targetNumber)
+                    }
+                    if (result != null) {
+                         result.contains(condition.keyword, ignoreCase = true)
+                    } else {
+                         false // API failure or no info -> treat as not matched (fail open)
+                    }
                 }
                 else -> false
             }

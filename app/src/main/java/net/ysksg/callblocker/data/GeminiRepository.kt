@@ -11,8 +11,13 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 
 class GeminiRepository(private val context: Context) {
+    
+    companion object {
+        private val cache = ConcurrentHashMap<String, String>()
+    }
     
     private val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
 
@@ -54,13 +59,19 @@ class GeminiRepository(private val context: Context) {
         prefs.edit().putString("gemini_prompt", prompt).apply()
     }
 
-    suspend fun checkPhoneNumber(number: String): String {
+    suspend fun checkPhoneNumber(number: String, ignoreCache: Boolean = false): String {
         val apiKey = getApiKey()
         if (apiKey.isNullOrBlank()) {
             return "APIキーが設定されていません"
         }
 
         val model = getModel()
+
+        // Cache Check
+        if (!ignoreCache && cache.containsKey(number)) {
+            Log.d("GeminiRepo", "Cache hit for $number")
+            return cache[number]!!
+        }
 
         return withContext(Dispatchers.IO) {
             try {
@@ -108,7 +119,9 @@ class GeminiRepository(private val context: Context) {
                         while (reader.readLine().also { line = it } != null) {
                             response.append(line)
                         }
-                        return@withContext parseGeminiResponse(response.toString())
+                        val result = parseGeminiResponse(response.toString())
+                        cache[number] = result
+                        return@withContext result
                     }
                 } else {
                     return@withContext "エラー: $responseCode"

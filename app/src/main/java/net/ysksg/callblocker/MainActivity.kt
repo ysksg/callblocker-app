@@ -258,7 +258,7 @@ fun MainScreen() {
                                         val coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
                                         coroutineScope.launch {
                                             try {
-                                                val result = geminiRepo.checkPhoneNumber(item.number)
+                                                val result = geminiRepo.checkPhoneNumber(item.number, ignoreCache = true)
                                                 historyRepo.updateHistory(item.timestamp, result)
                                                 // Refresh list on Main thread
                                                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -329,6 +329,7 @@ fun MainScreen() {
 val BLOCK_PRESETS = listOf(
     "連絡先に登録されている番号" to "CONTACT_REGISTERED",
     "連絡先に登録されていない番号" to "CONTACT_NOT_REGISTERED",
+    "AI解析結果に「迷惑電話」の文字列を含む" to "AI_CONDITION:迷惑電話",
     "海外からの着信" to "^\\+(?!81).*",
     "ナビダイヤル (0570)" to "^0570.*",
     "非通知・番号不明" to "^(Unknown|Private|)$",
@@ -859,14 +860,18 @@ fun ConditionAdderContent(
     onApply: (RuleCondition) -> Unit, 
     onCancel: () -> Unit
 ) {
-    var type by remember { mutableStateOf(if(initialCondition is RegexCondition) "regex" else "preset") }
+    var type by remember { mutableStateOf(if(initialCondition is RegexCondition) "regex" else if(initialCondition is AiCondition) "ai" else "preset") }
     var regexPattern by remember { 
         mutableStateOf(if (initialCondition is RegexCondition) initialCondition.pattern else "") 
+    }
+    var aiKeyword by remember {
+        mutableStateOf(if (initialCondition is AiCondition) initialCondition.keyword else "")
     }
     var isInverse by remember { 
         mutableStateOf(
             if (initialCondition is RegexCondition) initialCondition.isInverse 
-            else if (initialCondition is ContactCondition) initialCondition.isInverse 
+            else if (initialCondition is ContactCondition) initialCondition.isInverse
+            else if (initialCondition is AiCondition) initialCondition.isInverse 
             else false
         )
     }
@@ -898,6 +903,7 @@ fun ConditionAdderContent(
             Row(modifier = Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())) {
                 FilterChip(selected = type == "preset", onClick = { type = "preset" }, label = { Text("プリセット") }, modifier = Modifier.padding(end=4.dp))
                 FilterChip(selected = type == "regex", onClick = { type = "regex" }, label = { Text("正規表現") }, modifier = Modifier.padding(end=4.dp))
+                FilterChip(selected = type == "ai", onClick = { type = "ai" }, label = { Text("AI判定") }, modifier = Modifier.padding(end=4.dp))
             }
             
             Divider(modifier = Modifier.padding(vertical=8.dp))
@@ -946,6 +952,22 @@ fun ConditionAdderContent(
                            Text("条件の反転 (NOT条件)", style = MaterialTheme.typography.bodyMedium)
                         }
                     }
+                } else if (type == "ai") {
+                    Column {
+                         Text("AIが解析した「発信元情報」に、以下のキーワードが含まれる場合に適合します。", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                         Spacer(modifier = Modifier.height(8.dp))
+                         OutlinedTextField(
+                            value = aiKeyword,
+                            onValueChange = { aiKeyword = it },
+                            label = { Text("キーワード (例: 迷惑電話)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                           Checkbox(checked = isInverse, onCheckedChange = { isInverse = it })
+                           Text("条件の反転 (キーワードを含まない場合)", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
                 }
             }
             
@@ -961,11 +983,16 @@ fun ConditionAdderContent(
                              onApply(ContactCondition(isInverse = false)) 
                         } else if (pattern == "CONTACT_NOT_REGISTERED") {
                              onApply(ContactCondition(isInverse = true))
+                        } else if (pattern.startsWith("AI_CONDITION:")) {
+                             val keyword = pattern.removePrefix("AI_CONDITION:")
+                             onApply(AiCondition(keyword, isInverse = false))
                         } else {
                              onApply(RegexCondition(pattern, isInverse = false))
                         }
                     } else if (type == "regex" && regexPattern.isNotBlank()) {
                         onApply(RegexCondition(regexPattern, isInverse))
+                    } else if (type == "ai" && aiKeyword.isNotBlank()) {
+                        onApply(AiCondition(aiKeyword, isInverse))
                     }
                 }) { Text(if(initialCondition==null) "追加" else "更新") }
             }

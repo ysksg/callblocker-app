@@ -36,3 +36,14 @@ data class ContactCondition(
         return if (isInverse) "連絡先に登録されていない" else "連絡先に登録されている"
     }
 }
+
+data class AiCondition(
+    val keyword: String,
+    override val isInverse: Boolean = false
+) : RuleCondition {
+    override val type = "ai"
+    override fun getDescription(): String {
+        val action = if (isInverse) "含まない" else "含む"
+        return "AI解析結果に「$keyword」を$action"
+    }
+}
