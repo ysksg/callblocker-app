@@ -2,20 +2,29 @@ package net.ysksg.callblocker.data
 
 import java.util.UUID
 
+/**
+ * 着信拒否・許可のルール定義。
+ */
 data class BlockRule(
     val id: String = UUID.randomUUID().toString(),
     var name: String,
     val conditions: MutableList<RuleCondition> = mutableListOf(),
     var isEnabled: Boolean = true,
-    var isAllowRule: Boolean = false // trueならホワイトリストルール(許可ルール)
+    var isAllowRule: Boolean = false // trueなら許可リスト(ホワイトリスト)のルールとして扱う
 )
 
+/**
+ * ルールの条件を表すインターフェース。
+ */
 interface RuleCondition {
-    val type: String // "regex", "contact"
-    val isInverse: Boolean // NOT条件
+    val type: String // "regex" (正規表現), "contact" (連絡先), "ai" (AI判定)
+    val isInverse: Boolean // 条件を反転するか (NOT条件)
     fun getDescription(): String
 }
 
+/**
+ * 正規表現による条件。
+ */
 data class RegexCondition(
     val pattern: String,
     override val isInverse: Boolean = false
@@ -26,8 +35,9 @@ data class RegexCondition(
     }
 }
 
-// CountryCodeCondition removed as per user request (use Regex instead)
-
+/**
+ * 連絡先の登録有無による条件。
+ */
 data class ContactCondition(
     override val isInverse: Boolean = false // false=登録済み, true=未登録
 ) : RuleCondition {
@@ -37,6 +47,9 @@ data class ContactCondition(
     }
 }
 
+/**
+ * AI解析結果のキーワードによる条件。
+ */
 data class AiCondition(
     val keyword: String,
     override val isInverse: Boolean = false

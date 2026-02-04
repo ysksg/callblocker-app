@@ -34,7 +34,7 @@
         </activity>
 
         <service
-            android:name=".CallDetectorService"
+            android:name=".service.CallDetectorService"
             android:exported="true"
             android:permission="android.permission.BIND_SCREENING_SERVICE">
             <intent-filter>
@@ -43,7 +43,7 @@
         </service>
 
         <service
-            android:name=".OverlayService"
+            android:name=".service.OverlayService"
             android:foregroundServiceType="phoneCall"
             android:exported="false" />
     </application>

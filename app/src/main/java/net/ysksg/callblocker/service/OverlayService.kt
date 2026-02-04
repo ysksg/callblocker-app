@@ -1,4 +1,4 @@
-package net.ysksg.callblocker
+package net.ysksg.callblocker.service
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -48,11 +48,15 @@ import androidx.compose.runtime.remember
 
 import net.ysksg.callblocker.data.GeminiRepository
 import net.ysksg.callblocker.data.BlockHistoryRepository
+import net.ysksg.callblocker.data.OverlaySettingsRepository
+import net.ysksg.callblocker.util.PhoneNumberFormatter
+
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.math.roundToInt
 
+@Suppress("DEPRECATION")
 class OverlayService : LifecycleService(), ViewModelStoreOwner, SavedStateRegistryOwner {
     private lateinit var windowManager: WindowManager
     private var overlayView: ComposeView? = null
@@ -99,7 +103,7 @@ class OverlayService : LifecycleService(), ViewModelStoreOwner, SavedStateRegist
     private fun showOverlay(phoneNumber: String, timestamp: Long) {
         if (overlayView != null) return
 
-        val overlayRepo = net.ysksg.callblocker.data.OverlaySettingsRepository(this)
+        val overlayRepo = OverlaySettingsRepository(this)
         val prefs = getSharedPreferences("overlay_prefs", Context.MODE_PRIVATE)
         val metrics = resources.displayMetrics
         val defaultX = metrics.widthPixels - 200 // Approximate right side
@@ -138,7 +142,7 @@ class OverlayService : LifecycleService(), ViewModelStoreOwner, SavedStateRegist
             
             setContent {
                 val initialState = overlayRepo.getDefaultOverlayState()
-                val isExpandedStart = (initialState == net.ysksg.callblocker.data.OverlaySettingsRepository.STATE_EXPANDED)
+                val isExpandedStart = (initialState == OverlaySettingsRepository.STATE_EXPANDED)
 
                 OverlayScreen(
                     phoneNumber = phoneNumber,
@@ -232,17 +236,17 @@ class OverlayService : LifecycleService(), ViewModelStoreOwner, SavedStateRegist
     private fun createNotification(): Notification {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, "overlay_service")
-                .setContentTitle("着信監視中")
-                .setContentText("着信情報を表示しています")
-                .setSmallIcon(android.R.drawable.ic_menu_search)
-                .build()
+            .setContentTitle("着信監視中")
+            .setContentText("着信情報を表示しています")
+            .setSmallIcon(android.R.drawable.ic_menu_search)
+            .build()
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("着信監視中")
-                .setContentText("着信情報を表示しています")
-                .setSmallIcon(android.R.drawable.ic_menu_search)
-                .build()
+            .setContentTitle("着信監視中")
+            .setContentText("着信情報を表示しています")
+            .setSmallIcon(android.R.drawable.ic_menu_search)
+            .build()
         }
     }
 }
@@ -348,7 +352,7 @@ fun OverlayScreen(
                     
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = net.ysksg.callblocker.util.PhoneNumberFormatter.format(phoneNumber),
+                        text = PhoneNumberFormatter.format(phoneNumber),
                         color = Color.White,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold

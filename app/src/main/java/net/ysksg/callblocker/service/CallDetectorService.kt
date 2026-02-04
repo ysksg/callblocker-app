@@ -1,4 +1,4 @@
-package net.ysksg.callblocker
+package net.ysksg.callblocker.service
 
 import android.telecom.Call
 import android.telecom.CallScreeningService
@@ -9,43 +9,51 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
+import android.telecom.CallScreeningService.CallResponse
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.launch
+import net.ysksg.callblocker.MainActivity
+import net.ysksg.callblocker.data.BlockRuleRepository
+import net.ysksg.callblocker.data.BlockHistoryRepository
+import net.ysksg.callblocker.data.GeminiRepository
+import net.ysksg.callblocker.util.PhoneNumberFormatter
 
-
+/**
+ * 着信時にシステムから呼び出され、着信の許可・拒否を判定するサービス。
+ * CallScreeningServiceを継承し、OS標準の着信ブロック機能と連携します。
+ */
 class CallDetectorService : CallScreeningService() {
 
     override fun onScreenCall(callDetails: Call.Details) {
         val originalRawNumber = callDetails.handle?.schemeSpecificPart
-        Log.i("CallDetectorService", "onScreenCall received. Raw number: $originalRawNumber, Direction: ${callDetails.callDirection}")
+        Log.i("CallDetectorService", "着信検知: $originalRawNumber, 方向: ${callDetails.callDirection}")
         
         // 発信時は何もしない (ブロック判定もオーバーレイ表示もしない)
         if (callDetails.callDirection != Call.Details.DIRECTION_INCOMING) {
-             Log.i("CallDetectorService", "Ignoring outgoing call.")
-             // デフォルトの応答（何もしない＝許可）を返す必要はないかもしれないが、
-             // onScreenCallは応答を期待されるため、念のため許可応答を返しておくのが安全。
+             Log.i("CallDetectorService", "発信のため無視します")
+             // デフォルトの応答（何もしない＝許可）を返す
              respondToCall(callDetails, CallResponse.Builder().build())
              return
         }
         
         val rawNumber = originalRawNumber ?: ""
         if (originalRawNumber == null) {
-            Log.w("CallDetectorService", "Phone number is null, checking rules with empty string.")
+            Log.w("CallDetectorService", "電話番号がnullです。空文字としてルール判定を行います。")
         }
 
-        val repository = net.ysksg.callblocker.data.BlockRuleRepository(applicationContext)
+        val repository = BlockRuleRepository(applicationContext)
         val blockResult = repository.checkBlock(rawNumber)
-        Log.i("CallDetectorService", "Check result: ${blockResult.shouldBlock}, reason: ${blockResult.reason}")
+        Log.i("CallDetectorService", "判定結果: ${blockResult.shouldBlock}, 理由: ${blockResult.reason}")
 
         val timestamp = System.currentTimeMillis()
-        val historyRepo = net.ysksg.callblocker.data.BlockHistoryRepository(applicationContext)
+        val historyRepo = BlockHistoryRepository(applicationContext)
 
         // 1. ブロック判定
         if (blockResult.shouldBlock) {
-            Log.i("CallDetectorService", "Blocking call from $rawNumber")
+            Log.i("CallDetectorService", "$rawNumber からの着信をブロックします")
             
             // 表示用にフォーマット
-            val formattedNumber = net.ysksg.callblocker.util.PhoneNumberFormatter.format(rawNumber)
+            val formattedNumber = PhoneNumberFormatter.format(rawNumber)
             
             // AI解析中として保存
             historyRepo.addHistory(rawNumber, timestamp, blockResult.reason, "AI解析中...") 
@@ -53,16 +61,16 @@ class CallDetectorService : CallScreeningService() {
             // 非同期でAI解析実行
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 try {
-                    val geminiRepo = net.ysksg.callblocker.data.GeminiRepository(applicationContext)
+                    val geminiRepo = GeminiRepository(applicationContext)
                     val aiResult = geminiRepo.checkPhoneNumber(rawNumber)
                     historyRepo.updateHistory(timestamp, aiResult)
                 } catch (e: Exception) {
-                    Log.e("CallDetectorService", "AI Analysis failed", e)
+                    Log.e("CallDetectorService", "AI解析に失敗しました", e)
                     historyRepo.updateHistory(timestamp, "AI解析失敗")
                 }
             }
 
-            // 通知を表示 (ここはフォーマット済みを表示したい)
+            // 通知を表示
             showBlockNotification(formattedNumber, blockResult.reason)
 
             // ブロック実行
@@ -70,7 +78,7 @@ class CallDetectorService : CallScreeningService() {
                 .setDisallowCall(true)
                 .setRejectCall(true)
                 .setSkipCallLog(false)
-                .setSkipNotification(false) // アプリ側で出すためtrueでもいいが、システム側の通知も一応残す設定(false)
+                .setSkipNotification(false) // アプリ側で通知を出すためfalseも可だが、念のためシステム通知も許可
                 .build()
             
             respondToCall(callDetails, response)
@@ -78,7 +86,7 @@ class CallDetectorService : CallScreeningService() {
         }
         
         // 2. オーバーレイ表示 (ブロックされなかった場合)
-        Log.i("CallDetectorService", "Allowing call from $rawNumber, showing overlay.")
+        Log.i("CallDetectorService", "$rawNumber からの着信を許可し、オーバーレイを表示します")
         
         // 許可ログ保存
         historyRepo.addHistory(rawNumber, timestamp, "許可", "AI解析中...")
@@ -95,7 +103,7 @@ class CallDetectorService : CallScreeningService() {
                 startService(intent)
             }
         } catch (e: Exception) {
-            Log.e("CallDetectorService", "Failed to start overlay service", e)
+            Log.e("CallDetectorService", "オーバーレイサービスの起動に失敗しました", e)
         }
 
         // 通話は許可
@@ -107,16 +115,16 @@ class CallDetectorService : CallScreeningService() {
     }
 
     private fun showBlockNotification(phoneNumber: String, reason: String?) {
-        val channelId = "blocked_call_channel_popup" // Changed ID to force new settings
+        val channelId = "blocked_call_channel_popup"
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Create channel if not exists
+            // チャンネルが存在しない場合は作成
             if (manager.getNotificationChannel(channelId) == null) {
                 val channel = NotificationChannel(
                     channelId,
                     "ブロック着信通知 (ポップアップ)",
-                    NotificationManager.IMPORTANCE_HIGH // High importance for Heads-up
+                    NotificationManager.IMPORTANCE_HIGH // ヘッドアップ通知用
                 ).apply {
                     description = "着信ブロック時にポップアップで通知します"
                     enableVibration(true)
@@ -140,7 +148,7 @@ class CallDetectorService : CallScreeningService() {
             .setContentText("ブロック理由: ${reason ?: "不明"}")
             .setStyle(NotificationCompat.BigTextStyle().bigText(text)) // 詳細表示用にBigText
             .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_HIGH) // High priority for pre-Oreo and heuristic
+            .setPriority(NotificationCompat.PRIORITY_HIGH) 
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setAutoCancel(true)
             .build()

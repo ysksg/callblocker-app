@@ -13,9 +13,14 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Gemini APIクライアントクラス。
+ * GoogleのGenerative AIモデルを使用して、電話番号の解析などを行います。
+ */
 class GeminiRepository(private val context: Context) {
     
     companion object {
+        // 同じ番号に対するAPIコールの繰り返しを防ぐためのキャッシュ
         private val cache = ConcurrentHashMap<String, String>()
     }
     
@@ -29,7 +34,9 @@ class GeminiRepository(private val context: Context) {
         prefs.edit().putString("gemini_api_key", key).apply()
     }
 
-    // 検索エンジンURLテンプレート
+    /**
+     * Web検索ボタン用のURLテンプレートを取得。
+     */
     fun getSearchUrlTemplate(): String {
         return prefs.getString("search_url_template", "https://www.google.com/search?q={number}") 
             ?: "https://www.google.com/search?q={number}"
@@ -39,7 +46,9 @@ class GeminiRepository(private val context: Context) {
         prefs.edit().putString("search_url_template", url).apply()
     }
 
-    // AIモデル
+    /**
+     * 使用するAIモデル名を取得。
+     */
     fun getModel(): String {
         return prefs.getString("gemini_model", "gemini-2.5-flash-lite") ?: "gemini-2.5-flash-lite"
     }
@@ -48,7 +57,9 @@ class GeminiRepository(private val context: Context) {
         prefs.edit().putString("gemini_model", model).apply()
     }
 
-    // AI解析プロンプト
+    /**
+     * AI解析時に使用するプロンプトの設定を取得。
+     */
     fun getPrompt(): String {
         return prefs.getString("gemini_prompt", 
             "電話番号 {number} について、迷惑電話の可能性がありますか？「危険性: 高/中/低」という形式で始め、どのような内容の電話がされているのか1行で簡潔に答えてください。情報がない場合は「情報なし」と答えて。"
@@ -59,15 +70,22 @@ class GeminiRepository(private val context: Context) {
         prefs.edit().putString("gemini_prompt", prompt).apply()
     }
 
+    /**
+     * 指定された電話番号をAIで解析します。
+     *
+     * @param number 対象の電話番号
+     * @param ignoreCache trueの場合、キャッシュを使用せず強制的にAPIを呼び出します。
+     * @return 解析結果の文字列（エラー時はエラーメッセージ）
+     */
     suspend fun checkPhoneNumber(number: String, ignoreCache: Boolean = false): String {
         val apiKey = getApiKey()
         if (apiKey.isNullOrBlank()) {
-            return "APIキーが設定されていません"
+            return "[設定エラー] APIキーが設定されていません"
         }
 
         val model = getModel()
 
-        // Cache Check
+        // キャッシュチェック
         if (!ignoreCache && cache.containsKey(number)) {
             Log.d("GeminiRepo", "Cache hit for $number")
             return cache[number]!!
@@ -75,7 +93,7 @@ class GeminiRepository(private val context: Context) {
 
         return withContext(Dispatchers.IO) {
             try {
-                // Use dynamic model
+                // モデル名を動的にURLに組み込む
                 val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
@@ -101,7 +119,7 @@ class GeminiRepository(private val context: Context) {
                 contentsArray.put(contentObj)
                 jsonBody.put("contents", contentsArray)
 
-                // Add Google Search Grounding Tool
+                // Google Search Grounding Toolの追加
                 val toolsArray = JSONArray()
                 val toolObj = JSONObject()
                 val googleSearchObj = JSONObject()
@@ -124,68 +142,30 @@ class GeminiRepository(private val context: Context) {
                         return@withContext result
                     }
                 } else {
-                    return@withContext "エラー: $responseCode"
+                    return@withContext "[通信エラー] サーバー応答: $responseCode"
                 }
 
             } catch (e: Exception) {
                 Log.e("GeminiRepo", "Error", e)
-                return@withContext "通信エラー: ${e.message}"
+                return@withContext "[通信エラー] 通信障害: ${e.message}"
             }
         }
     }
 
+    /**
+     * APIキーの有効性を確認します（デフォルト保存済みモデル使用）。
+     */
     suspend fun verifyApiKey(apiKey: String): Pair<Boolean, String> {
-        return withContext(Dispatchers.IO) {
-            try {
-                val model = getModel() // Use currently saved model, or we could pass it in. 
-                // However, verify is usually done BEFORE saving. So we should probably allow verify to take a model param?
-                // For now, let's assume we use the saved model, BUT the user might change dropdown and click verify/save.
-                // So verify shouldn't rely on saved pref if we want to test the selection.
-                // Let's rely on the caller setting the pref OR overload/update this method. 
-                // Simpler: Just use the saved pref. The UI flow will be: Select model -> entering text -> Save (which verifies). 
-                // Actually, saving happens at the end. We should verify what is currently ON SCREEN.
-                // I will add an optional model parameter to verifyApiKey, defaulting to saved.
-                
-                // Wait, I cannot change the signature easily if used elsewhere.
-                // Let's stick to using the saved preference for now, OR better, update `verifyApiKey` to take `modelName`.
-                // But AppSettingsScreen calls it. I will update AppSettingsScreen too.
-                
-                val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.doOutput = true
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.setRequestProperty("x-goog-api-key", apiKey)
-
-                val jsonBody = JSONObject()
-                val contentsArray = JSONArray()
-                val contentObj = JSONObject()
-                val partsArray = JSONArray()
-                val partObj = JSONObject()
-                partObj.put("text", "Hi")
-                partsArray.put(partObj)
-                contentObj.put("parts", partsArray)
-                contentsArray.put(contentObj)
-                jsonBody.put("contents", contentsArray)
-
-                OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
-                
-                val code = conn.responseCode
-                if (code == 200) {
-                    return@withContext true to "Success"
-                } else if (code == 429) {
-                    return@withContext true to "Rate Limit (429)" // Authenticated but limited
-                } else {
-                    return@withContext false to "HTTP ERROR: $code"
-                }
-            } catch (e: Exception) {
-                Log.e("GeminiRepo", "Verification Error", e)
-                return@withContext false to "Error: ${e.message}"
-            }
-        }
+         return verifyApiKey(apiKey, getModel())
     }
 
-    // Overload for verifying a specific model before saving
+    /**
+     * 特定のモデルを指定してAPIキーの有効性を確認します。
+     *
+     * @param apiKey 確認するAPIキー
+     * @param model 使用するモデル名
+     * @return 検証結果ペア (成功/失敗, メッセージ)
+     */
     suspend fun verifyApiKey(apiKey: String, model: String): Pair<Boolean, String> {
          return withContext(Dispatchers.IO) {
             try {
@@ -211,15 +191,15 @@ class GeminiRepository(private val context: Context) {
                 
                 val code = conn.responseCode
                 if (code == 200) {
-                    return@withContext true to "Success"
+                    return@withContext true to "検証成功"
                 } else if (code == 429) {
-                    return@withContext true to "Rate Limit (429)"
+                    return@withContext true to "[API警告] レート制限 (429)" // 認証自体は成功とみなす
                 } else {
-                    return@withContext false to "HTTP ERROR: $code"
+                    return@withContext false to "[通信エラー] サーバー応答: $code"
                 }
             } catch (e: Exception) {
                 Log.e("GeminiRepo", "Verification Error", e)
-                return@withContext false to "Error: ${e.message}"
+                return@withContext false to "[システムエラー] 例外発生: ${e.message}"
             }
         }
     }
@@ -239,6 +219,6 @@ class GeminiRepository(private val context: Context) {
         } catch (e: Exception) {
             Log.e("GeminiRepo", "Parse Error", e)
         }
-        return "解析不能"
+        return "[解析エラー] 応答形式が不正です"
     }
 }

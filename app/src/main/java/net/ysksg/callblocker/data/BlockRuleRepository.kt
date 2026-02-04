@@ -12,40 +12,71 @@ import java.util.regex.Pattern
 import com.google.i18n.phonenumbers.PhoneNumberUtil
 import com.google.i18n.phonenumbers.PhoneNumberUtil.PhoneNumberFormat
 
+/**
+ * 着信ブロック判定結果データクラス。
+ *
+ * @param shouldBlock ブロックすべきかどうか (true=ブロック, false=許可)
+ * @param reason ブロック理由（ログ用）
+ * @param matchedRuleName 適合したルールの名前
+ */
 data class BlockResult(
     val shouldBlock: Boolean,
     val reason: String? = null,
     val matchedRuleName: String? = null
 )
 
+/**
+ * ブロックルールの管理と実行を行うリポジトリクラス。
+ * ルールの保存、読み込み、および着信番号に対する判定ロジックを提供します。
+ */
 class BlockRuleRepository(private val context: Context) {
-    private val prefs = context.getSharedPreferences("block_rules_v3", Context.MODE_PRIVATE) // Version bumped for breaking changes
+    private val prefs = context.getSharedPreferences("block_rules_v3", Context.MODE_PRIVATE)
 
-    // ルールリストの保存と読み出し
+    /**
+     * 保存されているルール一覧を取得します。
+     *
+     * @return ルールのリスト
+     */
     fun getRules(): List<BlockRule> {
         val jsonString = prefs.getString("rules_json", "[]") ?: "[]"
         return parseRulesJson(jsonString)
     }
 
+    /**
+     * ルールを保存します（新規または更新）。
+     * IDが一致するルールがあれば更新し、なければ末尾に追加します。
+     *
+     * @param rule 保存するルール
+     */
     fun saveRule(rule: BlockRule) {
         val currentRules = getRules().toMutableList()
         val index = currentRules.indexOfFirst { it.id == rule.id }
         if (index >= 0) {
             currentRules[index] = rule
         } else {
-            // 新規ルールは先頭に追加するか、末尾に追加するか。
-            // 評価順序が重要になったため、ユーザーが意図を把握しやすいよう末尾に追加するのが自然。
+            // 新規ルールは末尾に追加（評価順序が重要であるため）
             currentRules.add(rule)
         }
         saveRulesJson(currentRules)
     }
 
+    /**
+     * 指定したIDのルールを削除します。
+     *
+     * @param ruleId 削除対象のルールID
+     */
     fun deleteRule(ruleId: String) {
         val currentRules = getRules().toMutableList()
         currentRules.removeAll { it.id == ruleId }
         saveRulesJson(currentRules)
     }
     
+    /**
+     * ルールの順番を入れ替えます（優先度変更）。
+     *
+     * @param fromPosition 移動元のインデックス
+     * @param toPosition 移動先のインデックス
+     */
     fun swapRules(fromPosition: Int, toPosition: Int) {
         val currentRules = getRules().toMutableList()
         if (fromPosition in currentRules.indices && toPosition in currentRules.indices) {
@@ -54,6 +85,12 @@ class BlockRuleRepository(private val context: Context) {
         }
     }
 
+    /**
+     * 全ルールを一括保存します。
+     * ドラッグ＆ドロップ後の保存などで使用します。
+     *
+     * @param rules 保存するルールリスト
+     */
     fun saveRules(rules: List<BlockRule>) {
         saveRulesJson(rules)
     }
@@ -77,12 +114,11 @@ class BlockRuleRepository(private val context: Context) {
                             condObj.put("pattern", condition.pattern)
                         }
                         is ContactCondition -> {
-                            // No extra properties
+                            // 追加プロパティなし
                         }
                         is AiCondition -> {
                             condObj.put("keyword", condition.keyword)
                         }
-                        // CountryCodeCondition is removed
                     }
                     conditionsArray.put(condObj)
                 }
@@ -118,9 +154,7 @@ class BlockRuleRepository(private val context: Context) {
                             rule.conditions.add(RegexCondition(condObj.getString("pattern"), isInverse))
                         }
                         "contact" -> {
-                            // Migration logic: old "isRegistered"
-                            // if isRegistered exists and is false -> isInverse = true
-                            // else use loaded isInverse
+                            // マイグレーション: 旧形式 "isRegistered" のサポート
                             var effectiveInverse = isInverse
                             if (condObj.has("isRegistered")) {
                                 val isRegistered = condObj.getBoolean("isRegistered")
@@ -135,11 +169,7 @@ class BlockRuleRepository(private val context: Context) {
                              }
                         }
                         "country" -> {
-                            // Convert to Regex if possible, or skip
-                            // User requested removal, but converting to regex keeps functionality.
-                            // For simplicity and per request to remove, we will just SKIP loading country rules.
-                            // Or better, convert to a Regex that likely matches nothing or warn user.
-                            // Here we just skip it, effectively deleting the condition.
+                            // countryルールはサポート外のためスキップ
                         }
                     }
                 }
@@ -151,6 +181,12 @@ class BlockRuleRepository(private val context: Context) {
         return list
     }
 
+    /**
+     * 着信番号に対してブロックルールを適用し、結果を返します。
+     *
+     * @param number 着信番号
+     * @return 判定結果
+     */
     fun checkBlock(number: String): BlockResult {
         // ハイフン除去などの単純正規化
         val normalizedNumber = number.replace(Regex("[^0-9+]"), "")
@@ -162,7 +198,7 @@ class BlockRuleRepository(private val context: Context) {
         formattedList.add(normalizedNumber) // 記号除去
 
         try {
-            // libphonenumber で解析
+            // libphonenumber で解析し、各種フォーマットを生成
             val numberProto = phoneUtil.parse(number, "JP")
             
             // 1. National Format (090-1234-5678)
@@ -190,13 +226,12 @@ class BlockRuleRepository(private val context: Context) {
         Log.d("BlockRepo", "Check: $uniqueList")
 
         // ルール取得 (有効なもののみ)
-        // 以前のように allow/block で分けず、リスト順に評価する
         val allRules = getRules().filter { it.isEnabled }
         
         for (rule in allRules) {
             if (isRuleMatched(rule, uniqueList)) {
-                // 返り値：マッチしたルールが「許可ルール」ならブロックしない(false)
-                // 「拒否ルール」ならブロックする(true)
+                // マッチしたルールが「許可ルール」ならブロックしない
+                // 「拒否ルール」ならブロックする
                 if (rule.isAllowRule) {
                     return BlockResult(shouldBlock = false, matchedRuleName = rule.name)
                 } else {
@@ -205,14 +240,14 @@ class BlockRuleRepository(private val context: Context) {
             }
         }
 
-        // どのルールにもマッチしなければ、デフォルトは許可 (ブロックしない)
+        // どのルールにもマッチしなければ、デフォルトは許可
         return BlockResult(shouldBlock = false)
     }
 
     private fun isRuleMatched(rule: BlockRule, uniqueList: List<String>): Boolean {
         if (rule.conditions.isEmpty()) return false
         
-        // すべての条件を満たす必要がある (AND)
+        // すべての条件を満たす必要がある (AND条件)
         for (condition in rule.conditions) {
             val condMatched = when (condition) {
                 is RegexCondition -> {
@@ -226,26 +261,20 @@ class BlockRuleRepository(private val context: Context) {
                     hasContact
                 }
                 is AiCondition -> {
-                    // Make a blocking network call to Gemini
-                    // NOTE: This will delay the call screening process.
+                    // 同期的なネットワークコールを行う (CallScreeningServiceの制限時間に注意)
                     val geminiRepo = GeminiRepository(context)
                     val result = kotlinx.coroutines.runBlocking {
-                         // Use the original number for AI check
-                         // Try formatted E164 first if available, else raw
+                         // AIチェック用に対象番号を決定 (可能ならE164、なければ生番号)
                          val targetNumber = uniqueList.firstOrNull { it.startsWith("+") } ?: uniqueList.firstOrNull() ?: ""
-                         geminiRepo.checkPhoneNumber(targetNumber)
+                         geminiRepo.checkPhoneNumber(targetNumber) // キャッシュ機能あり
                     }
-                    if (result != null) {
-                         result.contains(condition.keyword, ignoreCase = true)
-                    } else {
-                         false // API failure or no info -> treat as not matched (fail open)
-                    }
+                    // キーワードが含まれているかチェック
+                    result.contains(condition.keyword, ignoreCase = true)
                 }
                 else -> false
             }
             
-            // isInverse (NOT条件) の処理
-            // condition.isInverse == true なら、condMatched == false であれば「条件成立」
+            // 条件の反転 (NOT条件) 処理
             val finalMatched = if (condition.isInverse) !condMatched else condMatched
             
             if (!finalMatched) return false
