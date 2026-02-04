@@ -272,12 +272,39 @@ fun OverlayScreen(
     // Expand/Collapse State
     var isExpanded by remember { androidx.compose.runtime.mutableStateOf(initialExpanded) }
 
-    androidx.compose.runtime.LaunchedEffect(phoneNumber) {
-        isLoading = true
-        val result = geminiRepo.checkPhoneNumber(phoneNumber)
-        geminiResult = result
-        historyRepo.updateHistory(timestamp, result) // Update history with timestamp and result
-        isLoading = false
+    androidx.compose.runtime.LaunchedEffect(timestamp) {
+        val item = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            historyRepo.getHistoryByTimestamp(timestamp)
+        }
+        // すでに結果が出ている場合はそれを表示
+        if (item?.aiResult != null && item.aiResult != "AI解析中...") {
+            geminiResult = item.aiResult
+            isLoading = false
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(context) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context?, intent: Intent?) {
+                if (intent?.action == "net.ysksg.callblocker.AI_ANALYSIS_COMPLETED") {
+                    val ts = intent.getLongExtra("TIMESTAMP", 0L)
+                    android.util.Log.d("OverlayService", "AI解析結果受信: $ts")
+                    if (ts == timestamp) {
+                         geminiResult = intent.getStringExtra("AI_RESULT")
+                         isLoading = false
+                    }
+                }
+            }
+        }
+        val filter = android.content.IntentFilter("net.ysksg.callblocker.AI_ANALYSIS_COMPLETED")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, filter)
+        }
+        onDispose {
+            context.unregisterReceiver(receiver)
+        }
     }
 
     Surface(

@@ -32,6 +32,26 @@ data class BlockResult(
 class BlockRuleRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("block_rules_v3", Context.MODE_PRIVATE)
 
+    init {
+        if (!prefs.contains("rules_json")) {
+            val defaultRules = listOf(
+                BlockRule(name = "連絡先許可", isAllowRule = true).apply { 
+                    conditions.add(ContactCondition(isInverse = false)) 
+                },
+                BlockRule(name = "海外着信ブロック", isAllowRule = false).apply { 
+                    conditions.add(RegexCondition("^\\+(?!81).*", isInverse = false)) 
+                },
+                BlockRule(name = "0800ブロック", isAllowRule = false).apply { 
+                    conditions.add(RegexCondition("^0800.*", isInverse = false)) 
+                },
+                BlockRule(name = "050ブロック", isAllowRule = false).apply { 
+                    conditions.add(RegexCondition("^050.*", isInverse = false)) 
+                }
+            )
+            saveRulesJson(defaultRules)
+        }
+    }
+
     /**
      * 保存されているルール一覧を取得します。
      *
@@ -57,6 +77,7 @@ class BlockRuleRepository(private val context: Context) {
             // 新規ルールは末尾に追加（評価順序が重要であるため）
             currentRules.add(rule)
         }
+        Log.i("BlockRepo", "ルールを保存/更新しました: ${rule.name} (ID: ${rule.id})")
         saveRulesJson(currentRules)
     }
 
@@ -68,6 +89,7 @@ class BlockRuleRepository(private val context: Context) {
     fun deleteRule(ruleId: String) {
         val currentRules = getRules().toMutableList()
         currentRules.removeAll { it.id == ruleId }
+        Log.i("BlockRepo", "ルールを削除しました: ID=$ruleId")
         saveRulesJson(currentRules)
     }
     
@@ -116,9 +138,6 @@ class BlockRuleRepository(private val context: Context) {
                         is ContactCondition -> {
                             // 追加プロパティなし
                         }
-                        is AiCondition -> {
-                            condObj.put("keyword", condition.keyword)
-                        }
                     }
                     conditionsArray.put(condObj)
                 }
@@ -161,12 +180,6 @@ class BlockRuleRepository(private val context: Context) {
                                 if (!isRegistered) effectiveInverse = true
                             }
                             rule.conditions.add(ContactCondition(effectiveInverse))
-                        }
-                        "ai" -> {
-                             val keyword = condObj.optString("keyword", "")
-                             if (keyword.isNotEmpty()) {
-                                 rule.conditions.add(AiCondition(keyword, isInverse))
-                             }
                         }
                         "country" -> {
                             // countryルールはサポート外のためスキップ
@@ -247,6 +260,8 @@ class BlockRuleRepository(private val context: Context) {
     private fun isRuleMatched(rule: BlockRule, uniqueList: List<String>): Boolean {
         if (rule.conditions.isEmpty()) return false
         
+        Log.d("BlockRepo", "判定中のルール: ${rule.name} (許可=${rule.isAllowRule})")
+        
         // すべての条件を満たす必要がある (AND条件)
         for (condition in rule.conditions) {
             val condMatched = when (condition) {
@@ -260,25 +275,20 @@ class BlockRuleRepository(private val context: Context) {
                     val hasContact = uniqueList.any { isContactExists(it) }
                     hasContact
                 }
-                is AiCondition -> {
-                    // 同期的なネットワークコールを行う (CallScreeningServiceの制限時間に注意)
-                    val geminiRepo = GeminiRepository(context)
-                    val result = kotlinx.coroutines.runBlocking {
-                         // AIチェック用に対象番号を決定 (可能ならE164、なければ生番号)
-                         val targetNumber = uniqueList.firstOrNull { it.startsWith("+") } ?: uniqueList.firstOrNull() ?: ""
-                         geminiRepo.checkPhoneNumber(targetNumber) // キャッシュ機能あり
-                    }
-                    // キーワードが含まれているかチェック
-                    result.contains(condition.keyword, ignoreCase = true)
-                }
                 else -> false
             }
             
             // 条件の反転 (NOT条件) 処理
             val finalMatched = if (condition.isInverse) !condMatched else condMatched
             
-            if (!finalMatched) return false
+            Log.d("BlockRepo", "  条件判定 [${condition.getDescription()}]: マッチ=$condMatched, 反転=${condition.isInverse} -> 結果=$finalMatched")
+            
+            if (!finalMatched) {
+                Log.d("BlockRepo", "  -> 不適合")
+                return false
+            }
         }
+        Log.d("BlockRepo", "  -> 適合")
         return true
     }
 

@@ -17,7 +17,7 @@ data class BlockRule(
  * ルールの条件を表すインターフェース。
  */
 interface RuleCondition {
-    val type: String // "regex" (正規表現), "contact" (連絡先), "ai" (AI判定)
+    val type: String // "regex" (正規表現), "contact" (連絡先)
     val isInverse: Boolean // 条件を反転するか (NOT条件)
     fun getDescription(): String
 }
@@ -47,16 +47,4 @@ data class ContactCondition(
     }
 }
 
-/**
- * AI解析結果のキーワードによる条件。
- */
-data class AiCondition(
-    val keyword: String,
-    override val isInverse: Boolean = false
-) : RuleCondition {
-    override val type = "ai"
-    override fun getDescription(): String {
-        val action = if (isInverse) "含まない" else "含む"
-        return "AI解析結果に「$keyword」を$action"
-    }
-}
+// AiCondition removed

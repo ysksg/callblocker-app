@@ -28,6 +28,7 @@ class BlockHistoryRepository(private val context: Context) {
      * 最大100件まで保持し、古いものは削除されます。
      */
     fun addHistory(number: String, timestamp: Long, reason: String?, aiResult: String? = null) {
+        Log.d("BlockHistoryRepository", "履歴追加: $number")
         val currentList = getHistory().toMutableList()
         // 新しいものを先頭に
         currentList.add(0, BlockHistory(number, timestamp, reason, aiResult))
@@ -40,22 +41,17 @@ class BlockHistoryRepository(private val context: Context) {
         saveHistory(currentList)
     }
 
-    /**
-     * 既存の履歴（AI解析結果など）を更新します。
-     */
     fun updateHistory(timestamp: Long, aiResult: String) {
         val currentList = getHistory().toMutableList()
         val index = currentList.indexOfFirst { it.timestamp == timestamp }
         if (index >= 0) {
             val oldItem = currentList[index]
             currentList[index] = oldItem.copy(aiResult = aiResult)
+            Log.d("BlockHistoryRepository", "履歴更新(AI結果): $aiResult")
             saveHistory(currentList)
         }
     }
 
-    /**
-     * 保存されている履歴リストを取得します。
-     */
     fun getHistory(): List<BlockHistory> {
         val jsonString = prefs.getString("history_json", "[]") ?: "[]"
         val list = mutableListOf<BlockHistory>()
@@ -78,10 +74,16 @@ class BlockHistoryRepository(private val context: Context) {
         return list
     }
 
+    fun getHistoryByTimestamp(timestamp: Long): BlockHistory? {
+        val list = getHistory()
+        return list.find { it.timestamp == timestamp }
+    }
+
     /**
      * 履歴を全消去します（デバッグ・テスト用）。
      */
     fun clearHistory() {
+        Log.i("BlockHistoryRepository", "着信履歴を全消去しました")
         prefs.edit { remove("history_json") }
     }
 

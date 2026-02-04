@@ -68,11 +68,51 @@ fun MainScreen() {
     val loadingItems = remember { mutableStateListOf<Long>() }
 
     // Permission Launchers
-    val overlayPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { isOverlayGranted = Settings.canDrawOverlays(context) }
-    val callScreeningLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { isCallScreeningGranted = PermissionUtils.checkCallScreeningRole(context) }
-    val contactPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isContactPermissionGranted = it }
-    val phoneStatePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isPhoneStatePermissionGranted = it }
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isNotificationPermissionGranted = it }
+    val overlayPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { 
+        isOverlayGranted = Settings.canDrawOverlays(context) 
+    }
+    val callScreeningLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { 
+        isCallScreeningGranted = PermissionUtils.checkCallScreeningRole(context) 
+    }
+    
+    val multiplePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        isContactPermissionGranted = results[Manifest.permission.READ_CONTACTS] ?: isContactPermissionGranted
+        isPhoneStatePermissionGranted = results[Manifest.permission.READ_PHONE_STATE] ?: isPhoneStatePermissionGranted
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            isNotificationPermissionGranted = results[Manifest.permission.POST_NOTIFICATIONS] ?: isNotificationPermissionGranted
+        }
+    }
+
+    // 自動権限リクエストチェーン
+    // 状態が変化するたびに再評価され、未許可のものがあればリクエストを投げます。
+    LaunchedEffect(isOverlayGranted, isCallScreeningGranted, isContactPermissionGranted, isPhoneStatePermissionGranted, isNotificationPermissionGranted) {
+        // 1. 着信ブロック (最重要)
+        if (!isCallScreeningGranted) {
+             PermissionUtils.requestCallScreeningRole(context as Activity, callScreeningLauncher)
+             return@LaunchedEffect
+        }
+        
+        // 2. オーバーレイ
+        if (!isOverlayGranted) {
+             val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+             overlayPermissionLauncher.launch(intent)
+             return@LaunchedEffect
+        }
+        
+        // 3. 標準権限 (まとめてリクエスト)
+        val missing = mutableListOf<String>()
+        if (!isContactPermissionGranted) missing.add(Manifest.permission.READ_CONTACTS)
+        if (!isPhoneStatePermissionGranted) missing.add(Manifest.permission.READ_PHONE_STATE)
+        if (!isNotificationPermissionGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            missing.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        
+        if (missing.isNotEmpty()) {
+            multiplePermissionLauncher.launch(missing.toTypedArray())
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -115,13 +155,18 @@ fun MainScreen() {
                             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp)
                         ) {
                             Column(modifier = Modifier.padding(8.dp)) {
-                                Text("必要な権限が不足しています", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+                                Text("初期セットアップを実行中...", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+                                Text("表示されるダイアログですべての権限を許可してください。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                                
+                                Spacer(modifier = Modifier.height(8.dp))
+                                // 手動フォールバック用ボタン (自動で進まない場合用)
                                 Row(modifier = Modifier.wrapContentSize().horizontalScroll(rememberScrollState())) {
-                                    if (!isOverlayGranted) Button(onClick = { overlayPermissionLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))) }, modifier = Modifier.padding(end=4.dp)) { Text("オーバーレイ") }
                                     if (!isCallScreeningGranted) Button(onClick = { PermissionUtils.requestCallScreeningRole(context as Activity, callScreeningLauncher) }, modifier = Modifier.padding(end=4.dp)) { Text("着信ブロック") }
-                                    if (!isContactPermissionGranted) Button(onClick = { contactPermissionLauncher.launch(Manifest.permission.READ_CONTACTS) }, modifier = Modifier.padding(end=4.dp)) { Text("連絡先") }
-                                    if (!isPhoneStatePermissionGranted) Button(onClick = { phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE) }, modifier = Modifier.padding(end=4.dp)) { Text("電話状態") }
-                                    if (!isNotificationPermissionGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Button(onClick = { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text("通知") }
+                                    if (!isOverlayGranted) Button(onClick = { overlayPermissionLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))) }, modifier = Modifier.padding(end=4.dp)) { Text("オーバーレイ") }
+                                    
+                                    if (!isContactPermissionGranted) Button(onClick = { multiplePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS)) }, modifier = Modifier.padding(end=4.dp)) { Text("連絡先") }
+                                    if (!isPhoneStatePermissionGranted) Button(onClick = { multiplePermissionLauncher.launch(arrayOf(Manifest.permission.READ_PHONE_STATE)) }, modifier = Modifier.padding(end=4.dp)) { Text("電話状態") }
+                                    if (!isNotificationPermissionGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Button(onClick = { multiplePermissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS)) }) { Text("通知") }
                                 }
                             }
                         }
@@ -180,7 +225,7 @@ fun MainScreen() {
                         val coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
                         coroutineScope.launch {
                             try {
-                                val result = geminiRepo.checkPhoneNumber(item.number, ignoreCache = true)
+                                val result = geminiRepo.checkPhoneNumber(item.number)
                                 historyRepo.updateHistory(item.timestamp, result)
                                 withContext(kotlinx.coroutines.Dispatchers.Main) {
                                     blockHistory = historyRepo.getHistory()

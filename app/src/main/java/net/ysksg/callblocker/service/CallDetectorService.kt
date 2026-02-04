@@ -48,32 +48,23 @@ class CallDetectorService : CallScreeningService() {
         val timestamp = System.currentTimeMillis()
         val historyRepo = BlockHistoryRepository(applicationContext)
 
-        // 1. ブロック判定
+        // 共通: 履歴への初期登録とAI解析開始
+        val historyReason = if (blockResult.shouldBlock) blockResult.reason else "許可"
+
         if (blockResult.shouldBlock) {
-            Log.i("CallDetectorService", "$rawNumber からの着信をブロックします")
-            
-            // 表示用にフォーマット
+             Log.i("CallDetectorService", "$rawNumber からの着信をブロックします")
+        } else {
+             Log.i("CallDetectorService", "$rawNumber からの着信を許可し、オーバーレイを表示します")
+        }
+
+        historyRepo.addHistory(rawNumber, timestamp, historyReason, "AI解析中...")
+        startAiAnalysis(rawNumber, timestamp)
+
+        if (blockResult.shouldBlock) {
+            // ブロック処理
             val formattedNumber = PhoneNumberFormatter.format(rawNumber)
-            
-            // AI解析中として保存
-            historyRepo.addHistory(rawNumber, timestamp, blockResult.reason, "AI解析中...") 
-
-            // 非同期でAI解析実行
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                try {
-                    val geminiRepo = GeminiRepository(applicationContext)
-                    val aiResult = geminiRepo.checkPhoneNumber(rawNumber)
-                    historyRepo.updateHistory(timestamp, aiResult)
-                } catch (e: Exception) {
-                    Log.e("CallDetectorService", "AI解析に失敗しました", e)
-                    historyRepo.updateHistory(timestamp, "AI解析失敗")
-                }
-            }
-
-            // 通知を表示
             showBlockNotification(formattedNumber, blockResult.reason)
 
-            // ブロック実行
             val response = CallResponse.Builder()
                 .setDisallowCall(true)
                 .setRejectCall(true)
@@ -82,36 +73,58 @@ class CallDetectorService : CallScreeningService() {
                 .build()
             
             respondToCall(callDetails, response)
-            return
-        }
-        
-        // 2. オーバーレイ表示 (ブロックされなかった場合)
-        Log.i("CallDetectorService", "$rawNumber からの着信を許可し、オーバーレイを表示します")
-        
-        // 許可ログ保存
-        historyRepo.addHistory(rawNumber, timestamp, "許可", "AI解析中...")
-        
-        val intent = Intent(this, OverlayService::class.java).apply {
-            putExtra("PHONE_NUMBER", rawNumber)
-            putExtra("TIMESTAMP", timestamp)
-        }
-        
-        try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
+        } else {
+            // 許可処理 (オーバーレイ)
+            val intent = Intent(this, OverlayService::class.java).apply {
+                putExtra("PHONE_NUMBER", rawNumber)
+                putExtra("TIMESTAMP", timestamp)
             }
-        } catch (e: Exception) {
-            Log.e("CallDetectorService", "オーバーレイサービスの起動に失敗しました", e)
-        }
+            
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+            } catch (e: Exception) {
+                Log.e("CallDetectorService", "オーバーレイサービスの起動に失敗しました", e)
+            }
 
-        // 通話は許可
-        val response = CallResponse.Builder()
-            .setDisallowCall(false) // ブロックしない
-            .build()
-        
-        respondToCall(callDetails, response)
+            // 通話は許可
+            val response = CallResponse.Builder()
+                .setDisallowCall(false) // ブロックしない
+                .build()
+            
+            respondToCall(callDetails, response)
+        }
+    }
+
+    private fun startAiAnalysis(number: String, timestamp: Long) {
+         Log.i("CallDetectorService", "AI解析を開始します: $number")
+         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val historyRepo = BlockHistoryRepository(applicationContext)
+            var resultString = ""
+            try {
+                val geminiRepo = GeminiRepository(applicationContext)
+                val aiResult = geminiRepo.checkPhoneNumber(number)
+                Log.i("CallDetectorService", "AI解析完了: $aiResult")
+                historyRepo.updateHistory(timestamp, aiResult)
+                resultString = aiResult
+            } catch (e: Exception) {
+                Log.e("CallDetectorService", "AI解析失敗: ${e.message}", e)
+                resultString = "AI解析失敗"
+                historyRepo.updateHistory(timestamp, resultString)
+            }
+            
+            // Overlay等への通知
+            val intent = Intent("net.ysksg.callblocker.AI_ANALYSIS_COMPLETED").apply {
+                putExtra("PHONE_NUMBER", number)
+                putExtra("TIMESTAMP", timestamp)
+                putExtra("AI_RESULT", resultString)
+                setPackage(applicationContext.packageName)
+            }
+            sendBroadcast(intent)
+        }
     }
 
     private fun showBlockNotification(phoneNumber: String, reason: String?) {
