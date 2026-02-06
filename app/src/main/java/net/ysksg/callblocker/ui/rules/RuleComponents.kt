@@ -45,6 +45,9 @@ import androidx.compose.ui.text.input.KeyboardType
 val BLOCK_PRESETS = listOf(
     "連絡先に登録されている番号" to "CONTACT_REGISTERED",
     "連絡先に登録されていない番号" to "CONTACT_NOT_REGISTERED",
+    "深夜の着信 (00:00〜06:00)" to TimeCondition(startHour = 0, startMinute = 0, endHour = 6, endMinute = 0),
+    "平日の着信 (月〜金)" to TimeCondition(daysOfWeek = listOf(Calendar.MONDAY, Calendar.TUESDAY, Calendar.WEDNESDAY, Calendar.THURSDAY, Calendar.FRIDAY)),
+    "週末の着信 (土日)" to TimeCondition(daysOfWeek = listOf(Calendar.SATURDAY, Calendar.SUNDAY)),
     "海外からの着信" to "^\\+(?!81).*",
     "ナビダイヤル (0570)" to "^0570.*",
     "非通知・番号不明" to "^(Unknown|Private|)$",
@@ -515,13 +518,12 @@ fun ConditionAdderContent(
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(onClick = {
                     if (type == "preset") {
-                        val (_, pattern) = BLOCK_PRESETS[selectedPresetIndex]
-                        if (pattern == "CONTACT_REGISTERED") {
-                             onApply(ContactCondition(isInverse = false)) 
-                        } else if (pattern == "CONTACT_NOT_REGISTERED") {
-                             onApply(ContactCondition(isInverse = true))
-                        } else {
-                             onApply(RegexCondition(pattern, isInverse = false))
+                        val (_, presetObj) = BLOCK_PRESETS[selectedPresetIndex]
+                        when (presetObj) {
+                            "CONTACT_REGISTERED" -> onApply(ContactCondition(isInverse = false))
+                            "CONTACT_NOT_REGISTERED" -> onApply(ContactCondition(isInverse = true))
+                            is String -> onApply(RegexCondition(presetObj, isInverse = false))
+                            is TimeCondition -> onApply(presetObj.copy(isInverse = isInverse))
                         }
                     } else if (type == "regex" && regexPattern.isNotBlank()) {
                         onApply(RegexCondition(regexPattern, isInverse))
