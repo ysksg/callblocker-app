@@ -2,7 +2,7 @@
 
 CallBlocker は、Android OS の Call Screening API を利用した強力な着信ブロック・迷惑電話対策アプリケーションです。
 
-## � スクリーンショット
+## スクリーンショット
 | ルール一覧 | ルール編集 | AI設定 |
 |:---:|:---:|:---:|
 | ![ルール一覧](screenshots/ss_rules.png) | ![ルール編集](screenshots/ss_rules_edit.png) | ![AI設定](screenshots/ss_settings_gemini.png) |
@@ -11,7 +11,7 @@ CallBlocker は、Android OS の Call Screening API を利用した強力な着�
 |:---:|:---:|
 | ![着信時オーバーレイ](screenshots/ss_incoming_overlay.png) | ![着信履歴](screenshots/ss_history.png) |
 
-## �🚀 主な機能
+## 主な機能
 
 ### 1. 高度な着信ブロック
 - **柔軟なルール設定**: 正規表現、連絡先の登録有無、日時・曜日を組み合わせた複雑なブロック条件を作成可能。
@@ -32,16 +32,16 @@ CallBlocker は、Android OS の Call Screening API を利用した強力な着�
 - **バックアップ・復元**: 全ての設定やルール、履歴を JSON 形式でエクスポート・インポート可能です。
 - **プライバシー重視**: 全ての処理はデバイス上（および Gemini API との直接通信）で行われ、開発者を含む第三者のサーバーへ履歴が送信されることはありません。
 
-## 🛠️ 技術スタック
+## 技術スタック
 - **Language**: Kotlin
 - **UI**: Jetpack Compose (Material 3)
 
-## 📦 ビルド・インストール
+## ビルド・インストール
 1. リポジトリをクローンまたはダウンロードします。
 2. Android Studio (Latest stable) でプロジェクトを開きます。
 3. リリースビルドを行うと、`outputs/apk/release/` に `callblocker-release-v1.0.apk` 形式でファイルが生成されます。
 
-## ⚠️ 注意事項
+## 注意事項
 - このアプリは「着信ブロックロール（Call Screening Service）」を利用します。アプリ内の案内に従って、システム設定で本アプリをデフォルトの着信ブロックアプリとして許可してください。
 - AI 解析機能を利用するには、別途 [Google AI Studio](https://aistudio.google.com/) で取得した API キーが必要です。
 
