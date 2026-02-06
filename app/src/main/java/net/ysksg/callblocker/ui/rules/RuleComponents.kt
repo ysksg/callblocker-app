@@ -26,8 +26,20 @@ import net.ysksg.callblocker.data.BlockRule
 import net.ysksg.callblocker.data.ContactCondition
 import net.ysksg.callblocker.data.RegexCondition
 import net.ysksg.callblocker.data.RuleCondition
+import net.ysksg.callblocker.data.TimeCondition
 import net.ysksg.callblocker.data.BlockRuleRepository
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import java.util.Calendar
+import java.util.Locale
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.input.KeyboardType
 
 val BLOCK_PRESETS = listOf(
@@ -118,9 +130,11 @@ fun RuleCard(
                                  Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                  Spacer(modifier = Modifier.width(4.dp))
                                  Text(
-                                     text = cond.getDescription().take(30) + if(cond.getDescription().length>30)"..." else "",
+                                     text = cond.getDescription(),
                                      style = MaterialTheme.typography.bodySmall,
-                                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                     maxLines = 2,
+                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                  )
                              }
                         }
@@ -144,6 +158,7 @@ fun RuleCard(
 /**
  * ルールの編集・作成ダイアログ。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RuleEditDialog(
     initialRule: BlockRule?,
@@ -179,19 +194,32 @@ fun RuleEditDialog(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                        Text("種類:", style = MaterialTheme.typography.titleSmall)
-                        Spacer(modifier = Modifier.weight(1f))
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { isAllowRule = false }) {
-                            RadioButton(selected = !isAllowRule, onClick = { isAllowRule = false })
-                            Text("拒否", color = Color.Red, style = MaterialTheme.typography.bodyMedium)
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { isAllowRule = true }) {
-                            RadioButton(selected = isAllowRule, onClick = { isAllowRule = true })
-                            Text("許可", color = allowColor, style = MaterialTheme.typography.bodyMedium)
-                        }
+                Text("ポリシー:", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = !isAllowRule,
+                        onClick = { isAllowRule = false },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                        icon = { Icon(Icons.Default.Close, null) },
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = MaterialTheme.colorScheme.errorContainer, 
+                            activeContentColor = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    ) {
+                        Text("拒否")
+                    }
+                    SegmentedButton(
+                        selected = isAllowRule,
+                        onClick = { isAllowRule = true },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                        icon = { Icon(Icons.Default.Check, null) },
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = Color(0xFFE8F5E9), 
+                            activeContentColor = Color(0xFF2E7D32)
+                        )
+                    ) {
+                        Text("許可")
                     }
                 }
                 
@@ -305,6 +333,7 @@ fun ConditionAdderContent(
         mutableStateOf(
             if (initialCondition is RegexCondition) initialCondition.isInverse 
             else if (initialCondition is ContactCondition) initialCondition.isInverse
+            else if (initialCondition is TimeCondition) initialCondition.isInverse
             else false
         )
     }
@@ -319,9 +348,22 @@ fun ConditionAdderContent(
                 BLOCK_PRESETS.indexOfFirst { 
                     it.second == (if(initialCondition.isInverse) "CONTACT_NOT_REGISTERED" else "CONTACT_REGISTERED") 
                 }.let { if(it >= 0) it else 0 }
+            } else if (initialCondition is TimeCondition) {
+                type = "time"
+                0
             } else 0
         ) 
     }
+    
+    // Time Condition States
+    var startDate by remember { mutableStateOf(if (initialCondition is TimeCondition) initialCondition.startDate else null) }
+    var endDate by remember { mutableStateOf(if (initialCondition is TimeCondition) initialCondition.endDate else null) }
+    var startTime by remember { mutableStateOf(if (initialCondition is TimeCondition && initialCondition.startHour != null) initialCondition.startHour to initialCondition.startMinute!! else null) }
+    var endTime by remember { mutableStateOf(if (initialCondition is TimeCondition && initialCondition.endHour != null) initialCondition.endHour to initialCondition.endMinute!! else null) }
+    var selectedDays by remember { mutableStateOf(if (initialCondition is TimeCondition) initialCondition.daysOfWeek.toSet() else emptySet()) }
+    
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val calendar = Calendar.getInstance()
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), 
@@ -334,6 +376,7 @@ fun ConditionAdderContent(
             Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 FilterChip(selected = type == "preset", onClick = { type = "preset" }, label = { Text("プリセット") }, modifier = Modifier.padding(end=4.dp))
                 FilterChip(selected = type == "regex", onClick = { type = "regex" }, label = { Text("正規表現") }, modifier = Modifier.padding(end=4.dp))
+                FilterChip(selected = type == "time", onClick = { type = "time" }, label = { Text("日時・曜日") }, modifier = Modifier.padding(end=4.dp))
             }
             
             HorizontalDivider(modifier = Modifier.padding(vertical=8.dp))
@@ -381,6 +424,88 @@ fun ConditionAdderContent(
                            Text("条件の反転 (NOT条件)", style = MaterialTheme.typography.bodyMedium)
                         }
                     }
+                } else if (type == "time") {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        Text("日付範囲 (任意)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(onClick = {
+                                DatePickerDialog(context, { _, y, m, d ->
+                                    startDate = String.format(Locale.getDefault(), "%04d-%02d-%02d", y, m + 1, d)
+                                }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
+                            }, modifier = Modifier.weight(1f)) {
+                                Text(startDate ?: "開始日なし")
+                            }
+                            Text(" ～ ", modifier = Modifier.padding(horizontal = 8.dp))
+                            OutlinedButton(onClick = {
+                                DatePickerDialog(context, { _, y, m, d ->
+                                    endDate = String.format(Locale.getDefault(), "%04d-%02d-%02d", y, m + 1, d)
+                                }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
+                            }, modifier = Modifier.weight(1f)) {
+                                Text(endDate ?: "終了日なし")
+                            }
+                            if (startDate != null || endDate != null) {
+                                IconButton(onClick = { startDate = null; endDate = null }) {
+                                    Icon(Icons.Default.Clear, "クリア")
+                                }
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("曜日指定 (任意)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            val days = listOf("日", "月", "火", "水", "木", "金", "土")
+                            val dayValues = listOf(Calendar.SUNDAY, Calendar.MONDAY, Calendar.TUESDAY, Calendar.WEDNESDAY, Calendar.THURSDAY, Calendar.FRIDAY, Calendar.SATURDAY)
+                            
+                            days.forEachIndexed { index, label ->
+                                val dayValue = dayValues[index]
+                                val isSelected = selectedDays.contains(dayValue)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { 
+                                        selectedDays = if(isSelected) selectedDays - dayValue else selectedDays + dayValue
+                                    },
+                                    label = { Text(label) },
+                                    modifier = Modifier.weight(1f).padding(horizontal = 2.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("時間帯 (任意)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(onClick = {
+                                val currentH = startTime?.first ?: 9
+                                val currentM = startTime?.second ?: 0
+                                TimePickerDialog(context, { _, h, m ->
+                                    startTime = h to m
+                                }, currentH, currentM, true).show()
+                            }, modifier = Modifier.weight(1f)) {
+                                Text(startTime?.let { String.format("%02d:%02d", it.first, it.second) } ?: "開始なし")
+                            }
+                            Text(" ～ ", modifier = Modifier.padding(horizontal = 8.dp))
+                            OutlinedButton(onClick = {
+                                val currentH = endTime?.first ?: 17
+                                val currentM = endTime?.second ?: 0
+                                TimePickerDialog(context, { _, h, m ->
+                                    endTime = h to m
+                                }, currentH, currentM, true).show()
+                            }, modifier = Modifier.weight(1f)) {
+                                Text(endTime?.let { String.format("%02d:%02d", it.first, it.second) } ?: "終了なし")
+                            }
+                            if (startTime != null || endTime != null) {
+                                IconButton(onClick = { startTime = null; endTime = null }) {
+                                    Icon(Icons.Default.Clear, "クリア")
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider()
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                           Checkbox(checked = isInverse, onCheckedChange = { isInverse = it })
+                           Text("条件の反転 (指定日時【以外】)", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
                 }
             }
             
@@ -400,6 +525,17 @@ fun ConditionAdderContent(
                         }
                     } else if (type == "regex" && regexPattern.isNotBlank()) {
                         onApply(RegexCondition(regexPattern, isInverse))
+                    } else if (type == "time") {
+                        onApply(TimeCondition(
+                            startDate = startDate,
+                            endDate = endDate,
+                            startHour = startTime?.first,
+                            startMinute = startTime?.second,
+                            endHour = endTime?.first,
+                            endMinute = endTime?.second,
+                            daysOfWeek = selectedDays.sorted(),
+                            isInverse = isInverse
+                        ))
                     }
                 }) { Text(if(initialCondition==null) "追加" else "更新") }
             }

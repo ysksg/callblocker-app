@@ -11,6 +11,10 @@ import java.util.Collections
 import java.util.regex.Pattern
 import com.google.i18n.phonenumbers.PhoneNumberUtil
 import com.google.i18n.phonenumbers.PhoneNumberUtil.PhoneNumberFormat
+import java.util.Calendar
+import java.util.Locale
+import java.text.SimpleDateFormat
+import java.util.Date
 
 /**
  * 着信ブロック判定結果データクラス。
@@ -138,6 +142,19 @@ class BlockRuleRepository(private val context: Context) {
                         is ContactCondition -> {
                             // 追加プロパティなし
                         }
+                        is TimeCondition -> {
+                            if (condition.startDate != null) condObj.put("startDate", condition.startDate)
+                            if (condition.endDate != null) condObj.put("endDate", condition.endDate)
+                            if (condition.startHour != null) condObj.put("startHour", condition.startHour)
+                            if (condition.startMinute != null) condObj.put("startMinute", condition.startMinute)
+                            if (condition.endHour != null) condObj.put("endHour", condition.endHour)
+                            if (condition.endMinute != null) condObj.put("endMinute", condition.endMinute)
+                            if (condition.daysOfWeek.isNotEmpty()) {
+                                val daysArray = JSONArray()
+                                condition.daysOfWeek.forEach { daysArray.put(it) }
+                                condObj.put("daysOfWeek", daysArray)
+                            }
+                        }
                     }
                     conditionsArray.put(condObj)
                 }
@@ -183,6 +200,25 @@ class BlockRuleRepository(private val context: Context) {
                         }
                         "country" -> {
                             // countryルールはサポート外のためスキップ
+                        }
+                        "time" -> {
+                            val daysList = mutableListOf<Int>()
+                            if (condObj.has("daysOfWeek")) {
+                                val arr = condObj.getJSONArray("daysOfWeek")
+                                for (k in 0 until arr.length()) {
+                                    daysList.add(arr.getInt(k))
+                                }
+                            }
+                            rule.conditions.add(TimeCondition(
+                                startDate = if(condObj.has("startDate")) condObj.getString("startDate") else null,
+                                endDate = if(condObj.has("endDate")) condObj.getString("endDate") else null,
+                                startHour = if(condObj.has("startHour")) condObj.getInt("startHour") else null,
+                                startMinute = if(condObj.has("startMinute")) condObj.getInt("startMinute") else null,
+                                endHour = if(condObj.has("endHour")) condObj.getInt("endHour") else null,
+                                endMinute = if(condObj.has("endMinute")) condObj.getInt("endMinute") else null,
+                                daysOfWeek = daysList,
+                                isInverse = isInverse
+                            ))
                         }
                     }
                 }
@@ -275,6 +311,9 @@ class BlockRuleRepository(private val context: Context) {
                     val hasContact = uniqueList.any { isContactExists(it) }
                     hasContact
                 }
+                is TimeCondition -> {
+                     isTimeMatched(condition)
+                }
                 else -> false
             }
             
@@ -289,6 +328,45 @@ class BlockRuleRepository(private val context: Context) {
             }
         }
         Log.d("BlockRepo", "  -> 適合")
+        return true
+    }
+
+    private fun isTimeMatched(condition: TimeCondition): Boolean {
+        val current = Calendar.getInstance()
+        
+        // 1. Check Date Range
+        if (condition.startDate != null || condition.endDate != null) {
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val todayStr = sdf.format(current.time)
+            
+            // String comparison works for yyyy-MM-dd
+            if (condition.startDate != null && todayStr < condition.startDate) return false
+            if (condition.endDate != null && todayStr > condition.endDate) return false
+        }
+        
+        // 2. Check Day of Week
+        if (condition.daysOfWeek.isNotEmpty()) {
+            val dayOfWeek = current.get(Calendar.DAY_OF_WEEK)
+            if (dayOfWeek !in condition.daysOfWeek) return false
+        }
+        
+        // 3. Check Time Range
+        if (condition.startHour != null && condition.startMinute != null && 
+            condition.endHour != null && condition.endMinute != null) {
+            
+            val currentMinutes = current.get(Calendar.HOUR_OF_DAY) * 60 + current.get(Calendar.MINUTE)
+            val startMinutes = condition.startHour * 60 + condition.startMinute
+            val endMinutes = condition.endHour * 60 + condition.endMinute
+            
+            if (startMinutes <= endMinutes) {
+                 if (currentMinutes < startMinutes || currentMinutes > endMinutes) return false
+            } else {
+                 // Overnight (e.g. 22:00 - 06:00)
+                 // Valid if >= 22:00 OR <= 06:00
+                 if (currentMinutes < startMinutes && currentMinutes > endMinutes) return false
+            }
+        }
+        
         return true
     }
 

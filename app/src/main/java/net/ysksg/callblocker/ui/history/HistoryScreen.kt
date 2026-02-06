@@ -2,12 +2,15 @@ package net.ysksg.callblocker.ui.history
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -108,59 +111,99 @@ fun HistoryItemCard(
     onAnalyze: () -> Unit,
     onWebSearch: () -> Unit
 ) {
+    var isExpanded by remember { mutableStateOf(false) }
+
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable { isExpanded = !isExpanded },
         elevation = CardDefaults.cardElevation(2.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = PhoneNumberFormatter.format(item.number),
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Text(
-                    text = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(Date(item.timestamp)),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                if (item.reason != null) {
-                    val isAllowed = item.reason == "許可"
-                    val reasonColor = if (isAllowed) Color(0xFF00C853) else MaterialTheme.colorScheme.error
-                    Text("理由: ${item.reason}", style = MaterialTheme.typography.bodyMedium, color = reasonColor)
-                }
-                if (item.aiResult != null) {
-                    Text("AI: ${item.aiResult}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
-                }
-            }
-            
-            // AI解析ボタン
-            OutlinedButton(
-                onClick = { if (!isAnalyzing) onAnalyze() },
-                modifier = Modifier.padding(end = 4.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                enabled = !isAnalyzing
-            ) {
-                if (isAnalyzing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.secondary
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = PhoneNumberFormatter.format(item.number),
+                        style = MaterialTheme.typography.titleLarge
                     )
-                } else {
-                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("AI", style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        text = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(Date(item.timestamp)),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (item.reason != null) {
+                        val isAllowed = item.reason == "許可"
+                        val reasonColor = if (isAllowed) Color(0xFF00C853) else MaterialTheme.colorScheme.error
+                        Text("理由: ${item.reason}", style = MaterialTheme.typography.bodyMedium, color = reasonColor)
+                    }
+                    if (item.aiResult != null) {
+                        Text("AI: ${item.aiResult}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
-            
-            // Web検索ボタン
-            OutlinedButton(
-                onClick = onWebSearch,
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-            ) {
-                Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Web", style = MaterialTheme.typography.labelSmall)
+
+            androidx.compose.animation.AnimatedVisibility(visible = isExpanded) {
+                Column {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // ダイヤルボタン
+                        val context = LocalContext.current
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            FilledIconButton(
+                                onClick = {
+                                    val intent = Intent(Intent.ACTION_DIAL).apply {
+                                        data = Uri.parse("tel:${item.number}")
+                                    }
+                                    context.startActivity(intent)
+                                },
+                                modifier = Modifier.size(48.dp),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            ) {
+                                Icon(Icons.Default.Call, contentDescription = "Dial")
+                            }
+                            Text("ダイヤル", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                        }
+
+                        // Web検索ボタン
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            OutlinedIconButton(
+                                onClick = onWebSearch,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(Icons.Default.Search, contentDescription = "Web Search")
+                            }
+                            Text("Web検索", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                        }
+
+                        // AI解析ボタン
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            OutlinedIconButton(
+                                onClick = { if (!isAnalyzing) onAnalyze() },
+                                modifier = Modifier.size(48.dp),
+                                enabled = !isAnalyzing
+                            ) {
+                                if (isAnalyzing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(Icons.Default.Star, contentDescription = "AI Analyze")
+                                }
+                            }
+                            Text("AI解析", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                }
             }
         }
     }
