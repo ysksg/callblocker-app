@@ -308,16 +308,11 @@ fun AISettingsScreen() {
     var prompt by remember { mutableStateOf(geminiRepo.getPrompt()) }
     
     val models = listOf(
-        "gemini-2.0-flash", // New model
-        "gemini-1.5-pro",
-        "gemini-1.5-flash",
-        "gemini-2.0-flash-lite-preview-02-05", // Example
-         "gemini-2.5-flash-lite" // Fallback kept
-    )
-    val stableModels = listOf(
-        "gemini-2.0-flash",
-        "gemini-1.5-pro", 
-        "gemini-1.5-flash"
+        "gemini-3-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite"
     )
 
     Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -380,7 +375,7 @@ fun AISettingsScreen() {
                 onDismissRequest = { expanded = false }
             ) {
                 // Hardcoded consistent list + current selection if not in list
-                 val displayModels = (listOf(selectedModel) + stableModels).distinct()
+                 val displayModels = (listOf(selectedModel) + models).distinct()
                  displayModels.forEach { model ->
                     DropdownMenuItem(
                         text = { Text(text = model) },
