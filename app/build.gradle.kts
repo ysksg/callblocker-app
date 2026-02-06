@@ -42,7 +42,7 @@ android {
     applicationVariants.all {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output.outputFileName = "callblocker-v${versionName}.apk"
+            output.outputFileName = "callblocker-release-v${versionName}.apk"
         }
     }
 }
