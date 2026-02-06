@@ -56,7 +56,7 @@ class GeminiRepository(private val context: Context) {
      * 使用するAIモデル名を取得。
      */
     fun getModel(): String {
-        return prefs.getString("gemini_model", "gemini-3-flash-preview") ?: "gemini-3-flash-preview"
+        return prefs.getString("gemini_model", "gemini-2.5-flash-lite") ?: "gemini-2.5-flash-lite"
     }
 
     fun setModel(model: String) {
