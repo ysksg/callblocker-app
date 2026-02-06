@@ -39,7 +39,7 @@ CallBlocker は、Android OS の Call Screening API を利用した強力な着�
 ## ビルド・インストール
 1. リポジトリをクローンまたはダウンロードします。
 2. Android Studio (Latest stable) でプロジェクトを開きます。
-3. リリースビルドを行うと、`outputs/apk/release/` に `callblocker-release-v1.0.apk` 形式でファイルが生成されます。
+3. リリースビルドを行うと、`outputs/apk/release/` に `callblocker-release-v1.1.apk` 形式でファイルが生成されます。
 
 ## 注意事項
 - このアプリは「着信ブロックロール（Call Screening Service）」を利用します。アプリ内の案内に従って、システム設定で本アプリをデフォルトの着信ブロックアプリとして許可してください。
