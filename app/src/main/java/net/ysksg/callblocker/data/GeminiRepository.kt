@@ -30,6 +30,15 @@ class GeminiRepository(private val context: Context) {
         prefs.edit().putString("gemini_api_key", key).apply()
     }
 
+    fun isAiAnalysisEnabled(): Boolean {
+        return prefs.getBoolean("is_ai_analysis_enabled", true)
+    }
+
+    fun setAiAnalysisEnabled(enabled: Boolean) {
+        Log.i("GeminiRepo", "AI解析有効化設定変更: $enabled")
+        prefs.edit().putBoolean("is_ai_analysis_enabled", enabled).apply()
+    }
+
     /**
      * Web検索ボタン用のURLテンプレートを取得。
      */
@@ -62,7 +71,7 @@ class GeminiRepository(private val context: Context) {
         val defaultPrompt = "電話番号 {number} について、迷惑電話の可能性を調査してください。" +
             "調査の際は電話番号をダブルクォーテーションで囲い、完全一致で検索してください。" +
             "また、検索結果を必ず複数参照し、総合的に評判を判断してください。" +
-            "調査結果をもとに、回答は必ず【迷惑電話】か【通常電話】のいずれかで始めてください。" +
+            "調査結果をもとに、回答は必ず【迷惑電話】か【情報なし】のいずれかで始めてください。" +
             "その後にどのような評判であるかを1行で簡潔に答えてください。"
         return prefs.getString("gemini_prompt", defaultPrompt) ?: defaultPrompt
     }

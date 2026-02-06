@@ -141,6 +141,14 @@ fun MainScreen() {
             }
         }
     ) { innerPadding ->
+        // Refresh data when switching tabs (e.g. after restore)
+        LaunchedEffect(selectedTab) {
+            if (selectedTab == 0) {
+                rules = repository.getRules()
+            } else if (selectedTab == 1) {
+                blockHistory = historyRepo.getHistory()
+            }
+        }
         Column(
             modifier = Modifier
                 .padding(innerPadding)

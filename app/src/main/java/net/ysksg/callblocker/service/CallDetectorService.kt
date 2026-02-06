@@ -57,8 +57,15 @@ class CallDetectorService : CallScreeningService() {
              Log.i("CallDetectorService", "$rawNumber からの着信を許可し、オーバーレイを表示します")
         }
 
-        historyRepo.addHistory(rawNumber, timestamp, historyReason, "AI解析中...")
-        startAiAnalysis(rawNumber, timestamp)
+        val geminiRepo = GeminiRepository(applicationContext)
+        val isAiEnabled = geminiRepo.isAiAnalysisEnabled()
+        val initialAiResult = if (isAiEnabled) "AI解析中..." else "AI解析は無効です。"
+        
+        historyRepo.addHistory(rawNumber, timestamp, historyReason, initialAiResult)
+        
+        if (isAiEnabled) {
+            startAiAnalysis(rawNumber, timestamp)
+        }
 
         if (blockResult.shouldBlock) {
             // ブロック処理
@@ -75,21 +82,27 @@ class CallDetectorService : CallScreeningService() {
             respondToCall(callDetails, response)
         } else {
             // 許可処理 (オーバーレイ)
-            val intent = Intent(this, OverlayService::class.java).apply {
-                putExtra("PHONE_NUMBER", rawNumber)
-                putExtra("TIMESTAMP", timestamp)
-            }
-            
-            try {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    startForegroundService(intent)
-                } else {
-                    startService(intent)
+            // 設定で有効な場合のみオーバーレイを表示
+            val overlayRepo = net.ysksg.callblocker.data.OverlaySettingsRepository(applicationContext)
+            if (overlayRepo.isOverlayEnabled()) {
+                val intent = Intent(this, OverlayService::class.java).apply {
+                    putExtra("PHONE_NUMBER", rawNumber)
+                    putExtra("TIMESTAMP", timestamp)
                 }
-            } catch (e: Exception) {
-                Log.e("CallDetectorService", "オーバーレイサービスの起動に失敗しました", e)
+                
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
+                } catch (e: Exception) {
+                    Log.e("CallDetectorService", "オーバーレイサービスの起動に失敗しました", e)
+                }
+            } else {
+                Log.i("CallDetectorService", "オーバーレイ表示は設定により無効化されています")
             }
-
+ 
             // 通話は許可
             val response = CallResponse.Builder()
                 .setDisallowCall(false) // ブロックしない

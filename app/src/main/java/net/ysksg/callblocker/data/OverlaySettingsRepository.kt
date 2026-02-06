@@ -9,6 +9,8 @@ class OverlaySettingsRepository(context: Context) {
     companion object {
         private const val KEY_IS_AUTO_CLOSE_ENABLED = "is_auto_close_enabled"
         private const val KEY_DEFAULT_OVERLAY_STATE = "default_overlay_state"
+        private const val KEY_IS_OVERLAY_ENABLED = "is_overlay_enabled"
+        private const val KEY_IS_POSITION_SAVE_ENABLED = "is_position_save_enabled"
         
         const val STATE_MINIMIZED = "minimized"
         const val STATE_EXPANDED = "expanded"
@@ -28,5 +30,21 @@ class OverlaySettingsRepository(context: Context) {
 
     fun setDefaultOverlayState(state: String) {
         prefs.edit().putString(KEY_DEFAULT_OVERLAY_STATE, state).apply()
+    }
+
+    fun isOverlayEnabled(): Boolean {
+        return prefs.getBoolean(KEY_IS_OVERLAY_ENABLED, true)
+    }
+
+    fun setOverlayEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_IS_OVERLAY_ENABLED, enabled).apply()
+    }
+
+    fun isPositionSaveEnabled(): Boolean {
+        return prefs.getBoolean(KEY_IS_POSITION_SAVE_ENABLED, true)
+    }
+
+    fun setPositionSaveEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_IS_POSITION_SAVE_ENABLED, enabled).apply()
     }
 }

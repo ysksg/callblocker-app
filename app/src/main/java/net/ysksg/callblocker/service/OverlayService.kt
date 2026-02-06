@@ -44,12 +44,17 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 
 import android.content.pm.ServiceInfo
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.runtime.remember
 
 import net.ysksg.callblocker.data.GeminiRepository
 import net.ysksg.callblocker.data.BlockHistoryRepository
 import net.ysksg.callblocker.data.OverlaySettingsRepository
 import net.ysksg.callblocker.util.PhoneNumberFormatter
+import net.ysksg.callblocker.data.ThemeRepository
+import net.ysksg.callblocker.ui.theme.CallBlockerTheme
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.draw.shadow
 
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
@@ -109,8 +114,8 @@ class OverlayService : LifecycleService(), ViewModelStoreOwner, SavedStateRegist
         val defaultX = metrics.widthPixels - 200 // Approximate right side
         val defaultY = metrics.heightPixels / 2 - 100 // Approximate center
 
-        val savedX = prefs.getInt("overlay_x", defaultX)
-        val savedY = prefs.getInt("overlay_y", defaultY)
+        val savedX = if (overlayRepo.isPositionSaveEnabled()) prefs.getInt("overlay_x", defaultX) else defaultX
+        val savedY = if (overlayRepo.isPositionSaveEnabled()) prefs.getInt("overlay_y", defaultY) else defaultY
 
         // Register PhoneStateListener for Auto Close
         if (overlayRepo.isAutoCloseEnabled()) {
@@ -139,20 +144,31 @@ class OverlayService : LifecycleService(), ViewModelStoreOwner, SavedStateRegist
             setViewTreeLifecycleOwner(this@OverlayService)
             setViewTreeSavedStateRegistryOwner(this@OverlayService)
             setViewTreeViewModelStoreOwner(this@OverlayService)
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
             
             setContent {
-                val initialState = overlayRepo.getDefaultOverlayState()
-                val isExpandedStart = (initialState == OverlaySettingsRepository.STATE_EXPANDED)
+                val themeRepo = remember { ThemeRepository(this@OverlayService) }
+                val themeMode = themeRepo.getThemeMode()
+                val darkTheme = when (themeMode) {
+                    ThemeRepository.THEME_DARK -> true
+                    ThemeRepository.THEME_LIGHT -> false
+                    else -> isSystemInDarkTheme()
+                }
 
-                OverlayScreen(
-                    phoneNumber = phoneNumber,
-                    timestamp = timestamp,
-                    initialExpanded = isExpandedStart,
-                    onClose = { stopSelf() },
-                    onSearch = { searchNumber(phoneNumber) },
-                    onDrag = { x, y -> updateLocation(x, y) },
-                    onPositionChange = { x, y -> savePosition(x, y) }
-                )
+                CallBlockerTheme(darkTheme = darkTheme) {
+                    val initialState = overlayRepo.getDefaultOverlayState()
+                    val isExpandedStart = (initialState == OverlaySettingsRepository.STATE_EXPANDED)
+
+                    OverlayScreen(
+                        phoneNumber = phoneNumber,
+                        timestamp = timestamp,
+                        initialExpanded = isExpandedStart,
+                        onClose = { stopSelf() },
+                        onSearch = { searchNumber(phoneNumber) },
+                        onDrag = { x, y -> updateLocation(x, y) },
+                        onPositionChange = { x, y -> savePosition(x, y) }
+                    )
+                }
             }
         }
 
@@ -176,6 +192,9 @@ class OverlayService : LifecycleService(), ViewModelStoreOwner, SavedStateRegist
     
     // Save position on drag end (simplified by saving on each move or use robust state, here we expose a callback)
     private fun savePosition(x: Int, y: Int) {
+        val overlayRepo = OverlaySettingsRepository(this)
+        if (!overlayRepo.isPositionSaveEnabled()) return
+
         val prefs = getSharedPreferences("overlay_prefs", Context.MODE_PRIVATE)
         prefs.edit().putInt("overlay_x", params.x).putInt("overlay_y", params.y).apply()
     }
@@ -307,8 +326,7 @@ fun OverlayScreen(
         }
     }
 
-    Surface(
-        color = Color.Transparent,
+    Box(
         modifier = Modifier
             .padding(16.dp)
             .pointerInput(Unit) {
@@ -329,7 +347,8 @@ fun OverlayScreen(
                 },
                 containerColor = Color.Transparent,
                 elevation = FloatingActionButtonDefaults.elevation(0.dp),
-                modifier = Modifier.size(64.dp)
+                shape = CircleShape,
+                modifier = Modifier.shadow(6.dp, CircleShape).size(64.dp)
             ) {
                 AndroidView(
                     factory = { ctx ->
@@ -347,11 +366,11 @@ fun OverlayScreen(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 modifier = Modifier.widthIn(max = 300.dp) // Limit width for better appearance
             ) {
                 Column(
                     modifier = Modifier
-                        .background(Color(0xEE222222), shape = RoundedCornerShape(16.dp))
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -362,7 +381,7 @@ fun OverlayScreen(
                     ) {
                         Text(
                             text = "着信情報",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.titleSmall
                         )
                         IconButton(onClick = { 
@@ -380,7 +399,7 @@ fun OverlayScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = PhoneNumberFormatter.format(phoneNumber),
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -391,7 +410,7 @@ fun OverlayScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFF333333), RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
                             .padding(12.dp)
                     ) {
                         if (isLoading) {
@@ -410,7 +429,7 @@ fun OverlayScreen(
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = geminiResult ?: "情報なし",
-                                    color = Color.White,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
