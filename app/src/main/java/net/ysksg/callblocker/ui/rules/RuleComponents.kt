@@ -77,82 +77,101 @@ fun RuleCard(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val allowColor = Color(0xFF00C853)
-    val containerColor = MaterialTheme.colorScheme.surface
     val isAllowList = rule.isAllowRule
-    val borderColor = if (isAllowList) allowColor.copy(alpha=0.5f) else MaterialTheme.colorScheme.error.copy(alpha=0.5f)
-    val icon = if (isAllowList) Icons.Default.Check else Icons.Default.Close
     
-    val iconBg = if (isAllowList) allowColor.copy(alpha = 0.1f) else MaterialTheme.colorScheme.errorContainer
-    val iconTint = if (isAllowList) allowColor else MaterialTheme.colorScheme.onErrorContainer
+    // Standard Material Design Colors
+    // Green 500 for Allow, Error (Red) for Block
+    val baseStateColor = if (isAllowList) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
     
-    val alpha = if (rule.isEnabled) 1.0f else 0.5f
+    // Dim the state color if the rule is disabled
+    val stateColor = if (rule.isEnabled) baseStateColor else baseStateColor.copy(alpha = 0.5f)
+    
+    val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val contentAlpha = if (rule.isEnabled) 1.0f else 0.5f
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = BorderStroke(1.dp, borderColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = containerColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)), // Thin, subtle border
         modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = 4.dp)
-            .graphicsLayer { this.alpha = alpha }
+            .padding(vertical = 2.dp, horizontal = 4.dp)
             .clickable { onEdit() }
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
+        // IntrinsicSize.Min allows the accent bar to match the height of the content
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            // Left Accent Bar (Dimmed if disabled)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(6.dp)
+                    .background(stateColor)
+            )
+            
+            // Content
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 8.dp, horizontal = 12.dp)
+                    .graphicsLayer { alpha = contentAlpha },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Leading Icon (Status)
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .background(iconBg, androidx.compose.foundation.shape.CircleShape),
+                        .size(32.dp)
+                        .background(stateColor.copy(alpha = 0.1f), androidx.compose.foundation.shape.CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(icon, contentDescription = null, tint = iconTint)
-                }
-                
-                Spacer(modifier = Modifier.width(12.dp))
-                
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = rule.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        if (isAllowList) {
-                            Text("許可", color = allowColor, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        } else {
-                            Text("拒否", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    if (rule.conditions.isNotEmpty()) {
-                        rule.conditions.forEach { cond ->
-                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                 Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                 Spacer(modifier = Modifier.width(4.dp))
-                                 Text(
-                                     text = cond.getDescription(),
-                                     style = MaterialTheme.typography.bodySmall,
-                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                     maxLines = 2,
-                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                 )
-                             }
-                        }
-                    } else {
-                         Text("条件なし (無効)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    }
-                }
-                
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(
-                        checked = rule.isEnabled,
-                        onCheckedChange = { onToggle() },
-                        modifier = Modifier.scale(0.8f) 
+                    Icon(
+                        imageVector = if (isAllowList) Icons.Default.Check else Icons.Default.Close,
+                        contentDescription = if (isAllowList) "Allow" else "Block",
+                        tint = stateColor,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Main Content
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = rule.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    
+                    if (rule.conditions.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        rule.conditions.forEach { cond ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "• ${cond.getDescription()}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "条件なし (無効)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Trailing Controls
+                Switch(
+                    checked = rule.isEnabled,
+                    onCheckedChange = { onToggle() },
+                    modifier = Modifier.scale(0.7f)
+                )
             }
         }
     }
@@ -176,7 +195,7 @@ fun RuleEditDialog(
     var showConditionAdder by remember { mutableStateOf(false) }
     var editingConditionIndex by remember { mutableStateOf<Int?>(null) } 
 
-    val allowColor = Color(0xFF00C853)
+
 
     Dialog(
         onDismissRequest = onDismiss,

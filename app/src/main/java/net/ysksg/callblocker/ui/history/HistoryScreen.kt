@@ -2,6 +2,8 @@ package net.ysksg.callblocker.ui.history
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +13,10 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -116,95 +122,152 @@ fun HistoryItemCard(
     onWebSearch: () -> Unit
 ) {
     var isExpanded by remember { mutableStateOf(false) }
+    
+    // Logic for determining status color (Green for Allowed, Red for Blocked/Unknown)
+    val isAllowed = item.reason == "許可"
+    val stateColor = if (isAllowed) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+    val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(vertical = 2.dp, horizontal = 4.dp)
             .clickable { isExpanded = !isExpanded },
-        elevation = CardDefaults.cardElevation(2.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        elevation = CardDefaults.cardElevation(1.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = PhoneNumberFormatter.format(item.number),
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(
-                        text = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(Date(item.timestamp)),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    if (item.reason != null) {
-                        val isAllowed = item.reason == "許可"
-                        val reasonColor = if (isAllowed) Color(0xFF00C853) else MaterialTheme.colorScheme.error
-                        Text("理由: ${item.reason}", style = MaterialTheme.typography.bodyMedium, color = reasonColor)
+        Column {
+            // Main Row (Always visible)
+            Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+                // Left Accent Bar
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(6.dp)
+                        .background(stateColor)
+                )
+
+                // Content
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 8.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Leading Icon (Status)
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(stateColor.copy(alpha = 0.1f), androidx.compose.foundation.shape.CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isAllowed) Icons.Default.Check else Icons.Default.Close,
+                            contentDescription = if (isAllowed) "Allowed" else "Blocked",
+                            tint = stateColor,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
-                    if (item.aiResult != null) {
-                        Text("AI: ${item.aiResult}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    // Text Content
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = PhoneNumberFormatter.format(item.number),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        
+                        Spacer(modifier = Modifier.height(2.dp))
+                        
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(Date(item.timestamp)),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (item.reason != null) {
+                                Text(
+                                    text = " • ${item.reason}", 
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isAllowed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                        
+                        if (item.aiResult != null) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "AI: ${item.aiResult}", 
+                                style = MaterialTheme.typography.bodySmall, 
+                                color = MaterialTheme.colorScheme.tertiary, 
+                                fontWeight = FontWeight.Bold,
+                                maxLines = if (isExpanded) Int.MAX_VALUE else 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
                     }
+                    
+                    // Expand/Collapse Indicator (Optional, but good for UX)
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
+            // Expanded Actions
             androidx.compose.animation.AnimatedVisibility(visible = isExpanded) {
                 Column {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(modifier = Modifier.padding(bottom = 12.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // ダイヤルボタン
+                        // Dial Button
                         val context = LocalContext.current
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            FilledIconButton(
-                                onClick = {
-                                    val intent = Intent(Intent.ACTION_DIAL).apply {
-                                        data = Uri.parse("tel:${item.number}")
-                                    }
-                                    context.startActivity(intent)
-                                },
-                                modifier = Modifier.size(48.dp),
-                                colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            ) {
-                                Icon(Icons.Default.Call, contentDescription = "Dial")
-                            }
-                            Text("ダイヤル", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
-                        }
-
-                        // Web検索ボタン
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            OutlinedIconButton(
-                                onClick = onWebSearch,
-                                modifier = Modifier.size(48.dp)
-                            ) {
-                                Icon(Icons.Default.Search, contentDescription = "Web Search")
-                            }
-                            Text("Web検索", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
-                        }
-
-                        // AI解析ボタン
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            OutlinedIconButton(
-                                onClick = { if (!isAnalyzing && isAiEnabled) onAnalyze() },
-                                modifier = Modifier.size(48.dp),
-                                enabled = !isAnalyzing && isAiEnabled
-                            ) {
-                                if (isAnalyzing) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
-                                    Icon(Icons.Default.Star, contentDescription = "AI Analyze")
+                        TextButton(
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_DIAL).apply {
+                                    data = Uri.parse("tel:${item.number}")
                                 }
+                                context.startActivity(intent)
                             }
-                            Text("AI解析", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp), color = if(isAiEnabled) Color.Unspecified else Color.Gray)
+                        ) {
+                            Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("発信")
+                        }
+
+                        // Web Search Button
+                        TextButton(onClick = onWebSearch) {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("検索")
+                        }
+
+                        // AI Analyze Button
+                        TextButton(
+                            onClick = { if (!isAnalyzing && isAiEnabled) onAnalyze() },
+                            enabled = !isAnalyzing && isAiEnabled,
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = if(isAiEnabled) MaterialTheme.colorScheme.tertiary else Color.Gray
+                            )
+                        ) {
+                            if (isAnalyzing) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("AI解析")
                         }
                     }
                 }
