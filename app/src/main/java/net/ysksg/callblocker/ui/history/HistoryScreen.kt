@@ -31,9 +31,11 @@ import java.util.Locale
  * AI解析やWeb検索、履歴の削除機能を提供します。
  */
 @Composable
+
 fun HistoryScreen(
     history: List<BlockHistory>,
     loadingItems: List<Long>,
+    isAiEnabled: Boolean,
     onClearHistory: () -> Unit,
     onAnalyze: (BlockHistory) -> Unit,
     onWebSearch: (BlockHistory) -> Unit
@@ -75,6 +77,7 @@ fun HistoryScreen(
                     HistoryItemCard(
                         item = item,
                         isAnalyzing = loadingItems.contains(item.timestamp),
+                        isAiEnabled = isAiEnabled,
                         onAnalyze = { onAnalyze(item) },
                         onWebSearch = { onWebSearch(item) }
                     )
@@ -108,6 +111,7 @@ fun HistoryScreen(
 fun HistoryItemCard(
     item: BlockHistory,
     isAnalyzing: Boolean,
+    isAiEnabled: Boolean,
     onAnalyze: () -> Unit,
     onWebSearch: () -> Unit
 ) {
@@ -187,9 +191,9 @@ fun HistoryItemCard(
                         // AI解析ボタン
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             OutlinedIconButton(
-                                onClick = { if (!isAnalyzing) onAnalyze() },
+                                onClick = { if (!isAnalyzing && isAiEnabled) onAnalyze() },
                                 modifier = Modifier.size(48.dp),
-                                enabled = !isAnalyzing
+                                enabled = !isAnalyzing && isAiEnabled
                             ) {
                                 if (isAnalyzing) {
                                     CircularProgressIndicator(
@@ -200,7 +204,7 @@ fun HistoryItemCard(
                                     Icon(Icons.Default.Star, contentDescription = "AI Analyze")
                                 }
                             }
-                            Text("AI解析", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                            Text("AI解析", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp), color = if(isAiEnabled) Color.Unspecified else Color.Gray)
                         }
                     }
                 }

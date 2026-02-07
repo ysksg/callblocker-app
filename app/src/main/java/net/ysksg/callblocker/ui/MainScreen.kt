@@ -35,6 +35,8 @@ import net.ysksg.callblocker.ui.rules.RuleListScreen
 import net.ysksg.callblocker.ui.settings.AppSettingsScreen
 import net.ysksg.callblocker.util.PermissionUtils
 
+import android.widget.Toast
+
 @Composable
 fun MainScreen() {
     val context = LocalContext.current
@@ -219,16 +221,23 @@ fun MainScreen() {
                         )
                     }
                  }
+
+
             } else if (selectedTab == 1) {
                 // History Screen
                 HistoryScreen(
                     history = blockHistory,
                     loadingItems = loadingItems,
+                    isAiEnabled = geminiRepo.isAiAnalysisEnabled(),
                     onClearHistory = {
                         historyRepo.clearHistory()
                         blockHistory = emptyList()
                     },
                     onAnalyze = { item ->
+                        if (!geminiRepo.isAiAnalysisEnabled()) {
+                             Toast.makeText(context, "AI解析は設定で無効になっています", Toast.LENGTH_SHORT).show()
+                             return@HistoryScreen
+                        }
                         loadingItems.add(item.timestamp)
                         val coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
                         coroutineScope.launch {
