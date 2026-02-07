@@ -1,10 +1,15 @@
-package net.ysksg.callblocker.data
+package net.ysksg.callblocker.repository
 
 import android.content.Context
 import android.net.Uri
 import android.provider.ContactsContract
 import android.util.Log
 import androidx.core.content.edit
+import net.ysksg.callblocker.model.BlockResult
+import net.ysksg.callblocker.model.BlockRule
+import net.ysksg.callblocker.model.ContactCondition
+import net.ysksg.callblocker.model.RegexCondition
+import net.ysksg.callblocker.model.TimeCondition
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Collections
@@ -15,19 +20,6 @@ import java.util.Calendar
 import java.util.Locale
 import java.text.SimpleDateFormat
 import java.util.Date
-
-/**
- * 着信ブロック判定結果データクラス。
- *
- * @param shouldBlock ブロックすべきかどうか (true=ブロック, false=許可)
- * @param reason ブロック理由（ログ用）
- * @param matchedRuleName 適合したルールの名前
- */
-data class BlockResult(
-    val shouldBlock: Boolean,
-    val reason: String? = null,
-    val matchedRuleName: String? = null
-)
 
 /**
  * ブロックルールの管理と実行を行うリポジトリクラス。

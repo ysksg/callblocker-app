@@ -1,4 +1,4 @@
-package net.ysksg.callblocker.data
+package net.ysksg.callblocker.model
 
 import java.util.UUID
 

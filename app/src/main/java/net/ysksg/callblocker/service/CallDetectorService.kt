@@ -13,10 +13,13 @@ import android.telecom.CallScreeningService.CallResponse
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.launch
 import net.ysksg.callblocker.MainActivity
-import net.ysksg.callblocker.data.BlockRuleRepository
-import net.ysksg.callblocker.data.BlockHistoryRepository
-import net.ysksg.callblocker.data.GeminiRepository
+import net.ysksg.callblocker.repository.BlockRuleRepository
+import net.ysksg.callblocker.repository.BlockHistoryRepository
+import net.ysksg.callblocker.model.BlockResult
+import net.ysksg.callblocker.repository.OverlaySettingsRepository
+import net.ysksg.callblocker.repository.GeminiRepository
 import net.ysksg.callblocker.util.PhoneNumberFormatter
+
 
 /**
  * 着信時にシステムから呼び出され、着信の許可・拒否を判定するサービス。
@@ -83,7 +86,7 @@ class CallDetectorService : CallScreeningService() {
         } else {
             // 許可処理 (オーバーレイ)
             // 設定で有効な場合のみオーバーレイを表示
-            val overlayRepo = net.ysksg.callblocker.data.OverlaySettingsRepository(applicationContext)
+            val overlayRepo = net.ysksg.callblocker.repository.OverlaySettingsRepository(applicationContext)
             if (overlayRepo.isOverlayEnabled()) {
                 val intent = Intent(this, OverlayService::class.java).apply {
                     putExtra("PHONE_NUMBER", rawNumber)

@@ -22,11 +22,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import net.ysksg.callblocker.data.GeminiRepository
-import net.ysksg.callblocker.data.OverlaySettingsRepository
-import net.ysksg.callblocker.data.BackupManager
+import net.ysksg.callblocker.repository.GeminiRepository
+import net.ysksg.callblocker.repository.OverlaySettingsRepository
+import net.ysksg.callblocker.repository.BackupRepository
 import net.ysksg.callblocker.BuildConfig
-import net.ysksg.callblocker.data.ThemeRepository
+import net.ysksg.callblocker.repository.ThemeRepository
+import net.ysksg.callblocker.repository.BlockRuleRepository
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -414,9 +415,9 @@ fun AISettingsScreen() {
                 scope.launch {
                     val (isValid, message) = geminiRepo.verifyApiKey(apiKey, selectedModel)
                     if (isValid) {
-                        Toast.makeText(context, "検証成功: $message", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "APIキーの検証に成功しました。", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(context, "検証失敗: $message", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "APIキーの検証に失敗しました。: $message", Toast.LENGTH_LONG).show()
                     }
                     isVerifying = false
                 }
@@ -438,7 +439,8 @@ fun AISettingsScreen() {
 @Composable
 fun DataSettingsScreen() {
     val context = LocalContext.current
-    val backupManager = remember { BackupManager(context) }
+    val blockRuleRepo = remember { BlockRuleRepository(context) }
+    val backupManager = remember { BackupRepository(context, blockRuleRepo) }
     val scope = rememberCoroutineScope()
     
     // Launchers

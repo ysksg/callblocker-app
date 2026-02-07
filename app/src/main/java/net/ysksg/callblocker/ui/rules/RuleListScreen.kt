@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import net.ysksg.callblocker.data.BlockRule
+import net.ysksg.callblocker.model.BlockRule
 import net.ysksg.callblocker.ui.common.EmptyListMessage
 
 /**

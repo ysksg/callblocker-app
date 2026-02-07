@@ -25,10 +25,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import net.ysksg.callblocker.data.BlockHistory
-import net.ysksg.callblocker.data.BlockHistoryRepository
-import net.ysksg.callblocker.data.BlockRuleRepository
-import net.ysksg.callblocker.data.GeminiRepository
+import net.ysksg.callblocker.repository.BlockHistory
+import net.ysksg.callblocker.repository.BlockHistoryRepository
+import net.ysksg.callblocker.repository.BlockRuleRepository
+import net.ysksg.callblocker.repository.GeminiRepository
 import net.ysksg.callblocker.ui.rules.RuleTestDialog
 import net.ysksg.callblocker.ui.history.HistoryScreen
 import net.ysksg.callblocker.ui.rules.RuleListScreen

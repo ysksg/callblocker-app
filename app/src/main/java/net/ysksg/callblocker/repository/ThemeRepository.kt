@@ -1,4 +1,4 @@
-package net.ysksg.callblocker.data
+package net.ysksg.callblocker.repository
 
 import android.content.Context
 import android.content.SharedPreferences

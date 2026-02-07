@@ -4,7 +4,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
-import net.ysksg.callblocker.data.BlockRule
+import net.ysksg.callblocker.model.BlockRule
 import java.util.Collections
 
 /**

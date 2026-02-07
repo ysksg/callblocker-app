@@ -19,7 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import net.ysksg.callblocker.data.BlockHistory
+import net.ysksg.callblocker.repository.BlockHistory
 import net.ysksg.callblocker.ui.common.EmptyListMessage
 import net.ysksg.callblocker.util.PhoneNumberFormatter
 import java.text.SimpleDateFormat

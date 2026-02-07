@@ -22,12 +22,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 
-import net.ysksg.callblocker.data.BlockRule
-import net.ysksg.callblocker.data.ContactCondition
-import net.ysksg.callblocker.data.RegexCondition
-import net.ysksg.callblocker.data.RuleCondition
-import net.ysksg.callblocker.data.TimeCondition
-import net.ysksg.callblocker.data.BlockRuleRepository
+import net.ysksg.callblocker.model.BlockRule
+import net.ysksg.callblocker.model.ContactCondition
+import net.ysksg.callblocker.model.RegexCondition
+import net.ysksg.callblocker.model.RuleCondition
+import net.ysksg.callblocker.model.TimeCondition
+import net.ysksg.callblocker.repository.BlockRuleRepository
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import java.util.Calendar

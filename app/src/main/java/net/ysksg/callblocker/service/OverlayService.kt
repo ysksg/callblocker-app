@@ -47,11 +47,12 @@ import android.content.pm.ServiceInfo
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.runtime.remember
 
-import net.ysksg.callblocker.data.GeminiRepository
-import net.ysksg.callblocker.data.BlockHistoryRepository
-import net.ysksg.callblocker.data.OverlaySettingsRepository
+import net.ysksg.callblocker.repository.GeminiRepository
+import net.ysksg.callblocker.repository.BlockHistoryRepository
+import net.ysksg.callblocker.repository.OverlaySettingsRepository
+import net.ysksg.callblocker.model.BlockResult
 import net.ysksg.callblocker.util.PhoneNumberFormatter
-import net.ysksg.callblocker.data.ThemeRepository
+import net.ysksg.callblocker.repository.ThemeRepository
 import net.ysksg.callblocker.ui.theme.CallBlockerTheme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.draw.shadow

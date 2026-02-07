@@ -12,7 +12,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import net.ysksg.callblocker.data.ThemeRepository
+import net.ysksg.callblocker.repository.ThemeRepository
 import net.ysksg.callblocker.ui.MainScreen
 import net.ysksg.callblocker.ui.theme.CallBlockerTheme
 

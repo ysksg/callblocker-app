@@ -1,15 +1,17 @@
-package net.ysksg.callblocker.data
+package net.ysksg.callblocker.repository
 
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import net.ysksg.callblocker.model.BlockRule
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 
-class BackupManager(private val context: Context) {
+
+class BackupRepository(private val context: Context, private val repository: BlockRuleRepository) {
 
     fun exportData(uri: Uri): Result<String> {
         return try {
