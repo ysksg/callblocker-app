@@ -204,9 +204,7 @@ fun HistoryItemCard(
                                 text = "AI: ${item.aiResult}", 
                                 style = MaterialTheme.typography.bodySmall, 
                                 color = MaterialTheme.colorScheme.tertiary, 
-                                fontWeight = FontWeight.Bold,
-                                maxLines = if (isExpanded) Int.MAX_VALUE else 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
