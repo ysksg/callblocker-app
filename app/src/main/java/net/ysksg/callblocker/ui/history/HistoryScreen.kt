@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
@@ -17,6 +18,13 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.foundation.combinedClickable
+import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,7 +52,8 @@ fun HistoryScreen(
     isAiEnabled: Boolean,
     onClearHistory: () -> Unit,
     onAnalyze: (BlockHistory) -> Unit,
-    onWebSearch: (BlockHistory) -> Unit
+    onWebSearch: (BlockHistory) -> Unit,
+    onAddToRule: (BlockHistory) -> Unit
 ) {
     var showDeleteHistoryDialog by remember { mutableStateOf(false) }
 
@@ -85,7 +94,8 @@ fun HistoryScreen(
                         isAnalyzing = loadingItems.contains(item.timestamp),
                         isAiEnabled = isAiEnabled,
                         onAnalyze = { onAnalyze(item) },
-                        onWebSearch = { onWebSearch(item) }
+                        onWebSearch = { onWebSearch(item) },
+                        onAddToRule = { onAddToRule(item) }
                     )
                 }
             }
@@ -113,13 +123,15 @@ fun HistoryScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HistoryItemCard(
     item: BlockHistory,
     isAnalyzing: Boolean,
     isAiEnabled: Boolean,
     onAnalyze: () -> Unit,
-    onWebSearch: () -> Unit
+    onWebSearch: () -> Unit,
+    onAddToRule: () -> Unit
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     
@@ -128,11 +140,20 @@ fun HistoryItemCard(
     val stateColor = if (isAllowed) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
 
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp, horizontal = 4.dp)
-            .clickable { isExpanded = !isExpanded },
+            .combinedClickable(
+                onClick = { isExpanded = !isExpanded },
+                onLongClick = {
+                    clipboardManager.setText(AnnotatedString(item.number))
+                    Toast.makeText(context, "コピーしました: ${item.number}", Toast.LENGTH_SHORT).show()
+                }
+            ),
         elevation = CardDefaults.cardElevation(1.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -225,12 +246,12 @@ fun HistoryItemCard(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
+                            .padding(vertical = 8.dp)
+                            .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Dial Button
-                        val context = LocalContext.current
                         TextButton(
                             onClick = {
                                 val intent = Intent(Intent.ACTION_DIAL).apply {
@@ -240,14 +261,14 @@ fun HistoryItemCard(
                             }
                         ) {
                             Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text("発信")
                         }
 
                         // Web Search Button
                         TextButton(onClick = onWebSearch) {
                             Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text("検索")
                         }
 
@@ -264,8 +285,15 @@ fun HistoryItemCard(
                             } else {
                                 Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(20.dp))
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text("AI解析")
+                        }
+
+                        // Add to Rule Button
+                        TextButton(onClick = onAddToRule) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("ルール登録")
                         }
                     }
                 }

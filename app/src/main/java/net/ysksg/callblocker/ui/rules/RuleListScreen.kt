@@ -35,6 +35,8 @@ fun RuleListScreen(
     var editingRule by remember { mutableStateOf<BlockRule?>(null) }
     var defaultIsAllowForNew by remember { mutableStateOf(false) }
 
+    val currentRules = rememberUpdatedState(rules)
+
     // RecyclerView用アダプター
     val adapter = remember { 
         RuleAdapter(
@@ -42,7 +44,8 @@ fun RuleListScreen(
             onUpdateRule = onUpdateRule,
             onDeleteRule = { ruleId ->
                 // 直接削除せず確認ダイアログを表示
-                val rule = rules.find { it.id == ruleId }
+                // 最新のリストから検索
+                val rule = currentRules.value.find { it.id == ruleId }
                 if (rule != null) {
                     ruleToDelete = rule
                 }

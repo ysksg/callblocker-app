@@ -34,6 +34,9 @@ import net.ysksg.callblocker.ui.history.HistoryScreen
 import net.ysksg.callblocker.ui.rules.RuleListScreen
 import net.ysksg.callblocker.ui.settings.AppSettingsScreen
 import net.ysksg.callblocker.util.PermissionUtils
+import net.ysksg.callblocker.model.BlockRule
+import net.ysksg.callblocker.model.RegexCondition
+import net.ysksg.callblocker.ui.rules.RuleEditDialog
 
 import android.widget.Toast
 
@@ -66,6 +69,10 @@ fun MainScreen() {
     var blockHistory by remember { mutableStateOf(historyRepo.getHistory()) }
     var showRuleTestDialog by remember { mutableStateOf(false) }
     
+    // Rule Edit from History
+    var showRuleEditDialogFromHistory by remember { mutableStateOf(false) }
+    var editingRuleFromHistory by remember { mutableStateOf<BlockRule?>(null) }
+
     // AI Analysis Loading State for History
     val loadingItems = remember { mutableStateListOf<Long>() }
 
@@ -264,6 +271,13 @@ fun MainScreen() {
                         } catch (e: Exception) {
                             // Ignore
                         }
+                    },
+                    onAddToRule = { item ->
+                        editingRuleFromHistory = BlockRule(
+                            name = "履歴から追加: ${item.number}",
+                            conditions = mutableListOf(RegexCondition(pattern = item.number))
+                        )
+                        showRuleEditDialogFromHistory = true
                     }
                 )
             } else {
@@ -277,6 +291,19 @@ fun MainScreen() {
         RuleTestDialog(
             repository = repository,
             onDismiss = { showRuleTestDialog = false }
+        )
+    }
+
+    if (showRuleEditDialogFromHistory) {
+        RuleEditDialog(
+            initialRule = editingRuleFromHistory,
+            onDismiss = { showRuleEditDialogFromHistory = false },
+            onSave = { updatedRule ->
+                repository.saveRule(updatedRule)
+                rules = repository.getRules() // Refresh rules
+                showRuleEditDialogFromHistory = false
+                Toast.makeText(context, "ルールを保存しました", Toast.LENGTH_SHORT).show()
+            }
         )
     }
 }
