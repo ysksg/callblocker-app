@@ -37,6 +37,8 @@ import net.ysksg.callblocker.util.PermissionUtils
 import net.ysksg.callblocker.model.BlockRule
 import net.ysksg.callblocker.model.RegexCondition
 import net.ysksg.callblocker.ui.rules.RuleEditDialog
+import net.ysksg.callblocker.repository.UpdateRepository
+import net.ysksg.callblocker.ui.settings.UpdateCheckDialog
 
 import android.widget.Toast
 
@@ -75,6 +77,22 @@ fun MainScreen() {
 
     // AI Analysis Loading State for History
     val loadingItems = remember { mutableStateListOf<Long>() }
+
+    // Update Check State
+    val updateRepo = remember { UpdateRepository(context) }
+    var latestReleaseForAutoCheck by remember { mutableStateOf<UpdateRepository.ReleaseInfo?>(null) }
+    var showAutoUpdateDialog by remember { mutableStateOf(false) }
+
+    // Automatic Update Check on Startup
+    LaunchedEffect(Unit) {
+        if (updateRepo.isAutoUpdateCheckEnabled()) {
+            val result = updateRepo.checkForUpdate()
+            if (result != null && result.isNewer) {
+                latestReleaseForAutoCheck = result
+                showAutoUpdateDialog = true
+            }
+        }
+    }
 
     // Permission Launchers
     val overlayPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { 
@@ -304,6 +322,13 @@ fun MainScreen() {
                 showRuleEditDialogFromHistory = false
                 Toast.makeText(context, "ルールを保存しました", Toast.LENGTH_SHORT).show()
             }
+        )
+    }
+
+    if (showAutoUpdateDialog && latestReleaseForAutoCheck != null) {
+        UpdateCheckDialog(
+            releaseInfo = latestReleaseForAutoCheck!!,
+            onDismiss = { showAutoUpdateDialog = false }
         )
     }
 }

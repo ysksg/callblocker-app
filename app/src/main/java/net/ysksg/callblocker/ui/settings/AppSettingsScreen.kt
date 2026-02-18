@@ -18,9 +18,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import net.ysksg.callblocker.repository.GeminiRepository
 import net.ysksg.callblocker.repository.OverlaySettingsRepository
@@ -32,6 +34,18 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.TextView
+import androidx.compose.foundation.shape.RoundedCornerShape
+import net.ysksg.callblocker.repository.UpdateRepository
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.core.content.FileProvider
+import io.noties.markwon.Markwon
+import java.io.File
 
 enum class SettingsRoute {
     Main, Overlay, Theme, Search, AI, Data
@@ -496,10 +510,259 @@ fun DataSettingsScreen() {
         
         ListItem(
             headlineContent = { Text("バージョン") },
-            supportingContent = { Text(BuildConfig.VERSION_NAME) },
+            supportingContent = { Text("${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})") },
             leadingContent = { Icon(Icons.Default.Info, contentDescription = null) }
         )
+
+        val updateRepo = remember { UpdateRepository(context) }
+        var isAutoUpdateEnabled by remember { mutableStateOf(updateRepo.isAutoUpdateCheckEnabled()) }
+        var isChecking by remember { mutableStateOf(false) }
+        var latestRelease by remember { mutableStateOf<UpdateRepository.ReleaseInfo?>(null) }
+        var showUpdateDialog by remember { mutableStateOf(false) }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("起動時にアップデートを確認", style = MaterialTheme.typography.bodyLarge)
+                Text("新しいバージョンがある場合に通知します", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            }
+            Switch(
+                checked = isAutoUpdateEnabled,
+                onCheckedChange = { 
+                    isAutoUpdateEnabled = it
+                    updateRepo.setAutoUpdateCheckEnabled(it)
+                }
+            )
+        }
+
+        Button(
+            onClick = {
+                isChecking = true
+                scope.launch {
+                    val result = updateRepo.checkForUpdate()
+                    isChecking = false
+                    if (result != null && result.isNewer) {
+                        latestRelease = result
+                        showUpdateDialog = true
+                    } else if (result != null) {
+                        Toast.makeText(context, "最新のバージョンです", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "アップデート情報の取得に失敗しました", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isChecking
+        ) {
+            if (isChecking) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("確認中...")
+            } else {
+                Text("アップデートを確認")
+            }
+        }
+
+        if (showUpdateDialog && latestRelease != null) {
+            UpdateCheckDialog(
+                releaseInfo = latestRelease!!,
+                onDismiss = { showUpdateDialog = false }
+            )
+        }
     }
+}
+
+@Composable
+fun UpdateCheckDialog(
+    releaseInfo: UpdateRepository.ReleaseInfo,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var isDownloading by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = if (isDownloading) ({}) else onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.fillMaxWidth(0.95f),
+        title = { Text("新しいバージョンが利用可能です: ${releaseInfo.tagName}") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text("更新内容:", style = MaterialTheme.typography.labelLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp, max = 500.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    val textColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+                    AndroidView(
+                        modifier = Modifier.padding(12.dp).verticalScroll(rememberScrollState()),
+                        factory = { ctx ->
+                            TextView(ctx).apply {
+                                setTextColor(textColor)
+                                setLineSpacing(0f, 1.2f)
+                                Markwon.create(ctx).setMarkdown(this, releaseInfo.body)
+                            }
+                        },
+                        update = { view ->
+                            view.setTextColor(textColor)
+                            Markwon.create(view.context).setMarkdown(view, releaseInfo.body)
+                        }
+                    )
+                }
+                if (isDownloading) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("ダウンロード中...", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.Start),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = {
+                        if (releaseInfo.apkUrl != null) {
+                            isDownloading = true
+                            downloadAndInstallApk(context, releaseInfo.apkUrl, releaseInfo.tagName) { success, message ->
+                                isDownloading = false
+                                if (!success) {
+                                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        } else {
+                            Toast.makeText(context, "APKのダウンロードURLが見つかりません", Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    enabled = !isDownloading && releaseInfo.apkUrl != null
+                ) {
+                    Text("インストール")
+                }
+                TextButton(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(releaseInfo.htmlUrl))
+                        context.startActivity(intent)
+                        onDismiss()
+                    },
+                    enabled = !isDownloading
+                ) {
+                    Text("GitHubで確認")
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                TextButton(
+                    onClick = onDismiss,
+                    enabled = !isDownloading
+                ) {
+                    Text("閉じる")
+                }
+            }
+        }
+    )
+}
+
+private fun downloadAndInstallApk(
+    context: Context, 
+    url: String, 
+    tagName: String,
+    onResult: (Boolean, String) -> Unit
+) {
+    val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    val uri = Uri.parse(url)
+    val fileName = "CallBlocker_$tagName.apk"
+    
+    val request = DownloadManager.Request(uri).apply {
+        setTitle("Call Blocker $tagName をダウンロード中")
+        setDescription("新しいバージョンをインストールします")
+        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+        setDestinationUri(Uri.fromFile(File(context.externalCacheDir, fileName)))
+        setAllowedOverMetered(true)
+        setAllowedOverRoaming(true)
+    }
+
+    val downloadId = try {
+        downloadManager.enqueue(request)
+    } catch (e: Exception) {
+        onResult(false, "ダウンロードの開始に失敗しました: ${e.message}")
+        return
+    }
+
+    // ダウンロード完了通知を受けるレシーバー
+    val onComplete = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            if (id == downloadId) {
+                context.unregisterReceiver(this)
+                
+                // ダウンロードステータスの確認
+                val query = DownloadManager.Query().setFilterById(downloadId)
+                val cursor = downloadManager.query(query)
+                if (cursor.moveToFirst()) {
+                    val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                    val status = cursor.getInt(statusIndex)
+                    if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                        try {
+                            installApk(context, fileName)
+                            onResult(true, "")
+                        } catch (e: Exception) {
+                            onResult(false, "インストールの起動に失敗しました: ${e.message}")
+                        }
+                    } else {
+                        val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                        val reason = cursor.getInt(reasonIndex)
+                        onResult(false, "ダウンロードに失敗しました (Code: $reason)")
+                    }
+                } else {
+                    onResult(false, "ダウンロード情報が見つかりません")
+                }
+                cursor.close()
+            }
+        }
+    }
+    
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+        context.registerReceiver(onComplete, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED)
+    } else {
+        context.registerReceiver(onComplete, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+    }
+}
+
+private fun installApk(context: Context, fileName: String) {
+    val apkFile = File(context.externalCacheDir, fileName)
+    
+    if (!apkFile.exists()) {
+        Toast.makeText(context, "ファイルが見つかりません: ${apkFile.absolutePath}", Toast.LENGTH_LONG).show()
+        return
+    }
+
+    // Android 8.0 以降の「不明なアプリのインストール」権限チェック
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        if (!context.packageManager.canRequestPackageInstalls()) {
+            val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                data = Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            Toast.makeText(context, "インストール権限を許可したあと、再度お試しください", Toast.LENGTH_LONG).show()
+            return
+        }
+    }
+
+    val apkUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
+    val installIntent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(apkUri, "application/vnd.android.package-archive")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(installIntent)
 }
 
 @Composable

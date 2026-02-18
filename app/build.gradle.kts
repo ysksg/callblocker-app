@@ -12,8 +12,8 @@ android {
         applicationId = "net.ysksg.callblocker"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -70,4 +70,5 @@ dependencies {
     implementation(libs.androidx.savedstate.ktx)
     implementation("com.googlecode.libphonenumber:libphonenumber:8.13.27")
     implementation(libs.androidx.recyclerview)
+    implementation("io.noties.markwon:core:4.6.2")
 }
