@@ -87,7 +87,21 @@ class BlockHistoryRepository(private val context: Context) {
                         reason = if (obj.isNull("reason")) null else obj.getString("reason"),
                         aiResult = if (obj.isNull("aiResult")) null else obj.getString("aiResult"),
                         aiStatus = try { AiStatus.valueOf(obj.optString("aiStatus", AiStatus.NONE.name)) } catch (e: Exception) { AiStatus.NONE },
-                        blockType = try { BlockType.valueOf(obj.optString("blockType", BlockType.ALLOWED.name)) } catch (e: Exception) { BlockType.ALLOWED }
+                        blockType = try {
+                            if (obj.has("blockType")) {
+                                BlockType.valueOf(obj.getString("blockType"))
+                            } else {
+                                // 以前のバージョンの互換性対応
+                                val reasonStr = if (obj.isNull("reason")) null else obj.getString("reason")
+                                if (reasonStr == null || reasonStr == "許可") {
+                                    BlockType.ALLOWED
+                                } else {
+                                    BlockType.REJECTED // 過去の履歴で理由があるものは拒否されていたとみなす
+                                }
+                            }
+                        } catch (e: Exception) { 
+                            BlockType.ALLOWED 
+                        }
                     )
                 )
             }
