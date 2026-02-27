@@ -368,17 +368,25 @@ fun AISettingsScreen() {
     var isAiCacheEnabled by remember { mutableStateOf(geminiRepo.isAiCacheEnabled()) }
     val scope = rememberCoroutineScope()
 
+    data class GeminiModelInfo(val id: String, val displayName: String, val isPaidOnly: Boolean = false)
+    
+    val modelOptions = listOf(
+        GeminiModelInfo("gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview", isPaidOnly = true),
+        GeminiModelInfo("gemini-3-flash-preview", "Gemini 3 Flash Preview", isPaidOnly = true),
+        GeminiModelInfo("gemini-2.5-pro", "Gemini 2.5 Pro", isPaidOnly = true),
+        GeminiModelInfo("gemini-2.5-flash", "Gemini 2.5 Flash"),
+        GeminiModelInfo("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"),
+        GeminiModelInfo("gemini-2.0-flash", "Gemini 2.0 Flash")
+    )
+
     var expanded by remember { mutableStateOf(false) }
-    var selectedModel by remember { mutableStateOf(geminiRepo.getModel()) }
+    var selectedModelId by remember { mutableStateOf(geminiRepo.getModel()) }
     var prompt by remember { mutableStateOf(geminiRepo.getPrompt()) }
     
-    val models = listOf(
-        "gemini-3-pro-preview",
-        "gemini-3-flash-preview",
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
-        "gemini-2.5-flash-lite"
-    )
+    // 現在のIDに対応する表示名を取得
+    val selectedModelDisplayName = modelOptions.find { it.id == selectedModelId }?.let { 
+        if (it.isPaidOnly) "${it.displayName} (有料版APIのみ利用可能)" else it.displayName
+    } ?: selectedModelId
 
     Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
         // Master Toggle
@@ -464,7 +472,7 @@ fun AISettingsScreen() {
             modifier = Modifier.fillMaxWidth()
         ) {
             OutlinedTextField(
-                value = selectedModel,
+                value = selectedModelDisplayName,
                 onValueChange = {},
                 readOnly = true,
                 label = { Text("使用モデル") },
@@ -477,14 +485,30 @@ fun AISettingsScreen() {
                 expanded = expanded,
                 onDismissRequest = { expanded = false }
             ) {
-                // Hardcoded consistent list + current selection if not in list
-                 val displayModels = (listOf(selectedModel) + models).distinct()
-                 displayModels.forEach { model ->
+                 modelOptions.forEach { modelInfo ->
                     DropdownMenuItem(
-                        text = { Text(text = model) },
+                        text = { 
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = modelInfo.displayName)
+                                if (modelInfo.isPaidOnly) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "有料版APIのみ利用可能",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                                        )
+                                    }
+                                }
+                            }
+                        },
                         onClick = {
-                            selectedModel = model
-                            geminiRepo.setModel(model)
+                            selectedModelId = modelInfo.id
+                            geminiRepo.setModel(modelInfo.id)
                             expanded = false
                         }
                     )
@@ -527,11 +551,11 @@ fun AISettingsScreen() {
                 onClick = {
                     isVerifying = true
                     scope.launch {
-                        val (primaryValid, primaryMsg) = geminiRepo.verifyApiKey(apiKey, selectedModel)
+                        val (primaryValid, primaryMsg) = geminiRepo.verifyApiKey(apiKey, selectedModelId)
                         
                         if (primaryValid) {
                             if (fallbackApiKey.isNotBlank()) {
-                                val (fallbackValid, fallbackMsg) = geminiRepo.verifyApiKey(fallbackApiKey, selectedModel)
+                                val (fallbackValid, fallbackMsg) = geminiRepo.verifyApiKey(fallbackApiKey, selectedModelId)
                                 if (fallbackValid) {
                                     Toast.makeText(context, "両方のAPIキーの検証に成功しました。", Toast.LENGTH_SHORT).show()
                                 } else {
