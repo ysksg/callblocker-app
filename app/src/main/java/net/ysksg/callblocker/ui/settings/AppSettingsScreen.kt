@@ -362,6 +362,7 @@ fun AISettingsScreen() {
     val geminiRepo = remember { GeminiRepository(context) }
     
     var apiKey by remember { mutableStateOf(geminiRepo.getApiKey() ?: "") }
+    var fallbackApiKey by remember { mutableStateOf(geminiRepo.getFallbackApiKey() ?: "") }
     var isVerifying by remember { mutableStateOf(false) }
     var isAiEnabled by remember { mutableStateOf(geminiRepo.isAiAnalysisEnabled()) }
     var isAiCacheEnabled by remember { mutableStateOf(geminiRepo.isAiCacheEnabled()) }
@@ -425,19 +426,35 @@ fun AISettingsScreen() {
         
         val fieldsEnabled = isAiEnabled && !isVerifying
 
-        // API Key
+        // Main API Key
         OutlinedTextField(
             value = apiKey,
             onValueChange = { 
                 apiKey = it
                 geminiRepo.setApiKey(it)
             },
-            label = { Text("Gemini API Key") },
+            label = { Text("メイン Gemini API Key") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             enabled = fieldsEnabled
         )
         
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Fallback API Key
+        OutlinedTextField(
+            value = fallbackApiKey,
+            onValueChange = { 
+                fallbackApiKey = it
+                geminiRepo.setFallbackApiKey(it)
+            },
+            label = { Text("フォールバック Gemini API Key (任意)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = { Text("レート制限時に使用される予備のキー") },
+            enabled = fieldsEnabled
+        )
+
         Spacer(modifier = Modifier.height(16.dp))
         
         // Model Selection
@@ -494,27 +511,43 @@ fun AISettingsScreen() {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Button(
-            onClick = {
-                isVerifying = true
-                scope.launch {
-                    val (isValid, message) = geminiRepo.verifyApiKey(apiKey, selectedModel)
-                    if (isValid) {
-                        Toast.makeText(context, "APIキーの検証に成功しました。", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "APIキーの検証に失敗しました。: $message", Toast.LENGTH_LONG).show()
-                    }
-                    isVerifying = false
-                }
-            },
-            modifier = Modifier.align(Alignment.End),
-            enabled = fieldsEnabled
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             if (isVerifying) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("検証中")
-            } else {
+                Text("検証中...", style = MaterialTheme.typography.bodySmall)
+                Spacer(modifier = Modifier.width(16.dp))
+            }
+
+            Button(
+                onClick = {
+                    isVerifying = true
+                    scope.launch {
+                        val (primaryValid, primaryMsg) = geminiRepo.verifyApiKey(apiKey, selectedModel)
+                        
+                        if (primaryValid) {
+                            if (fallbackApiKey.isNotBlank()) {
+                                val (fallbackValid, fallbackMsg) = geminiRepo.verifyApiKey(fallbackApiKey, selectedModel)
+                                if (fallbackValid) {
+                                    Toast.makeText(context, "両方のAPIキーの検証に成功しました。", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "メインはOKですが、フォールバックキーの検証に失敗しました: $fallbackMsg", Toast.LENGTH_LONG).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "APIキーの検証に成功しました。", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "メインAPIキーの検証に失敗しました: $primaryMsg", Toast.LENGTH_LONG).show()
+                        }
+                        isVerifying = false
+                    }
+                },
+                enabled = fieldsEnabled && apiKey.isNotBlank()
+            ) {
                 Text("APIキー検証")
             }
         }

@@ -31,6 +31,21 @@ class GeminiRepository(private val context: Context) {
         prefs.edit().putString("gemini_api_key", key).apply()
     }
 
+    /**
+     * フォールバック用のAPIキーを取得。
+     */
+    fun getFallbackApiKey(): String? {
+        return prefs.getString("gemini_api_key_fallback", null)
+    }
+
+    /**
+     * フォールバック用のAPIキーを設定。
+     */
+    fun setFallbackApiKey(key: String) {
+        Log.i("GeminiRepo", "フォールバックAPIキー設定変更: (長さ=${key.length})")
+        prefs.edit().putString("gemini_api_key_fallback", key).apply()
+    }
+
     fun isAiAnalysisEnabled(): Boolean {
         return prefs.getBoolean("is_ai_analysis_enabled", true)
     }
@@ -89,9 +104,11 @@ class GeminiRepository(private val context: Context) {
      * @return 解析結果の文字列とステータスのペア
      */
     suspend fun checkPhoneNumber(number: String): Pair<String, AiStatus> {
-        val apiKey = getApiKey()
-        if (apiKey.isNullOrBlank()) {
-            Log.e("GeminiRepo", "APIキー未設定")
+        val primaryApiKey = getApiKey()
+        val fallbackApiKey = getFallbackApiKey()
+        
+        if (primaryApiKey.isNullOrBlank()) {
+            Log.e("GeminiRepo", "メインAPIキー未設定")
             return "[設定エラー] APIキーが設定されていません" to AiStatus.ERROR
         }
 
@@ -100,43 +117,42 @@ class GeminiRepository(private val context: Context) {
 
         return withContext(Dispatchers.IO) {
             var lastError: String = "[通信エラー] 不明"
-            // リトライ回数: 初回 + 1回リトライ
-            repeat(2) { attempt ->
+            var currentApiKey = primaryApiKey
+            var isUsingFallback = false
+            
+            // リトライ最大回数: メイン(レートリミット/解析エラー) -> フォールバック(レートリミット/解析エラー)
+            // 合計で最大4回試行の可能性がある (メイン x 2, フォールバック x 2)
+            for (attempt in 1..4) {
                 try {
-                    Log.d("GeminiRepo", "リクエスト送信 (試行 ${attempt + 1})")
-                    // モデル名を動的にURLに組み込む
+                    Log.d("GeminiRepo", "リクエスト送信 (試行 $attempt, 鍵: ${if(isUsingFallback) "Fallback" else "Primary"})")
                     val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
                     val conn = url.openConnection() as HttpURLConnection
                     conn.requestMethod = "POST"
                     conn.doOutput = true
                     conn.setRequestProperty("Content-Type", "application/json")
-                    conn.setRequestProperty("x-goog-api-key", apiKey ?: "")
+                    conn.setRequestProperty("x-goog-api-key", currentApiKey)
 
                     val promptTemplate = getPrompt()
                     val promptText = if (promptTemplate.contains("{number}")) {
                         promptTemplate.replace("{number}", number)
                     } else {
-                         "$promptTemplate (対象番号: $number)"
+                        "$promptTemplate (対象番号: $number)"
                     }
 
-                    val jsonBody = JSONObject()
-                    val contentsArray = JSONArray()
-                    val contentObj = JSONObject()
-                    val partsArray = JSONArray()
-                    val partObj = JSONObject()
-                    partObj.put("text", promptText)
-                    partsArray.put(partObj)
-                    contentObj.put("parts", partsArray)
-                    contentsArray.put(contentObj)
-                    jsonBody.put("contents", contentsArray)
-                    
-                    // Google Search Grounding Toolの追加
-                    val toolsArray = JSONArray()
-                    val toolObj = JSONObject()
-                    val googleSearchObj = JSONObject()
-                    toolObj.put("google_search", googleSearchObj)
-                    toolsArray.put(toolObj)
-                    jsonBody.put("tools", toolsArray)
+                    val jsonBody = JSONObject().apply {
+                        put("contents", JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("parts", JSONArray().apply {
+                                    put(JSONObject().apply { put("text", promptText) })
+                                })
+                            })
+                        })
+                        put("tools", JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("google_search", JSONObject())
+                            })
+                        })
+                    }
 
                     OutputStreamWriter(conn.outputStream).use { it.write(jsonBody.toString()) }
 
@@ -147,21 +163,42 @@ class GeminiRepository(private val context: Context) {
                         val response = conn.inputStream.bufferedReader().use { it.readText() }
                         Log.d("GeminiRepo", "レスポンス受信完了: ${response.length}文字")
                         val parsed = parseGeminiResponse(response)
-                        val status = if (parsed.startsWith("[解析エラー]")) AiStatus.ERROR else AiStatus.SUCCESS
-                        return@withContext parsed to status
+                        
+                        if (parsed.startsWith("[解析エラー]")) {
+                            lastError = parsed
+                            Log.w("GeminiRepo", "解析エラー発生: 再試行します (試行 $attempt)")
+                        } else {
+                            return@withContext parsed to AiStatus.SUCCESS
+                        }
+                    } else if (responseCode == 429) {
+                        lastError = "[レート制限] APIの利用制限に達しました (429)"
+                        Log.w("GeminiRepo", "レートリミット到達 (試行 $attempt)")
+                        
+                        // メインキーでレートリミットが発生し、かつフォールバックキーが設定されている場合は切り替える
+                        if (!isUsingFallback && !fallbackApiKey.isNullOrBlank()) {
+                            Log.i("GeminiRepo", "フォールバックAPIキーに切り替えます")
+                            currentApiKey = fallbackApiKey
+                            isUsingFallback = true
+                            // 切り替え直後にすぐ試行するため、ディレイなしでループ継続
+                            continue
+                        }
                     } else {
-                        lastError = "[通信エラー] サーバー応答: $responseCode"
-                        Log.w("GeminiRepo", "試行 ${attempt + 1} 失敗: $lastError")
+                        val errorDetail = try {
+                            conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+                        } catch (e: Exception) { "" }
+                        lastError = "[通信エラー] サーバー応答: $responseCode $errorDetail"
+                        Log.w("GeminiRepo", "リクエスト失敗: $lastError")
                     }
 
                 } catch (e: Exception) {
-                    Log.e("GeminiRepo", "試行 ${attempt + 1} エラー", e)
+                    Log.e("GeminiRepo", "通信例外発生 (試行 $attempt)", e)
                     lastError = "[通信エラー] 通信障害: ${e.message}"
                 }
                 
-                // リトライ前の待機（最後の試行でなければ）
-                if (attempt == 0) {
-                    kotlinx.coroutines.delay(1000) // 1秒待機して再試行
+                // 次の試行がある場合は待機
+                if (attempt < 4) {
+                    val delayMs = 1000L * attempt // 指数バックオフ的な簡易待機
+                    kotlinx.coroutines.delay(delayMs)
                 }
             }
             return@withContext lastError to AiStatus.ERROR
