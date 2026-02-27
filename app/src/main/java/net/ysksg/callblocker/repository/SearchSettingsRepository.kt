@@ -15,7 +15,7 @@ class SearchSettingsRepository(private val context: Context) {
          */
         val SEARCH_PRESETS = listOf(
             "Google（google.com）" to "https://www.google.com/search?q={number}",
-            "電話帳ナビ（telnavi.jp）" to "https://www.telnavi.jp/search?q={number}",
+            "電話帳ナビ（telnavi.jp）" to "https://www.telnavi.jp/phone/{number}",
             "jpnumber電話番号検索（jpnumber.com）" to "https://www.jpnumber.com/searchnumber.do?number={number}",
             "カスタム" to ""
         )
