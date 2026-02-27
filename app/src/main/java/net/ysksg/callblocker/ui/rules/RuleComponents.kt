@@ -80,8 +80,12 @@ fun RuleCard(
     val isAllowList = rule.isAllowRule
     
     // Standard Material Design Colors
-    // Green 500 for Allow, Error (Red) for Block
-    val baseStateColor = if (isAllowList) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+    // Green 500 for Allow, Error (Red) for Block (Reject), Orange for Silence
+    val baseStateColor = when {
+        isAllowList -> Color(0xFF4CAF50)
+        rule.ruleAction == net.ysksg.callblocker.model.RuleAction.SILENCE -> Color(0xFFFF9800)
+        else -> MaterialTheme.colorScheme.error
+    }
     
     // Dim the state color if the rule is disabled
     val stateColor = if (rule.isEnabled) baseStateColor else baseStateColor.copy(alpha = 0.5f)
@@ -124,8 +128,12 @@ fun RuleCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = if (isAllowList) Icons.Default.Check else Icons.Default.Close,
-                        contentDescription = if (isAllowList) "Allow" else "Block",
+                        imageVector = when {
+                            isAllowList -> Icons.Default.Check
+                            rule.ruleAction == net.ysksg.callblocker.model.RuleAction.SILENCE -> Icons.Default.Call
+                            else -> Icons.Default.Close
+                        },
+                        contentDescription = if (isAllowList) "Allow" else rule.ruleAction.name,
                         tint = stateColor,
                         modifier = Modifier.size(18.dp)
                     )
@@ -191,6 +199,7 @@ fun RuleEditDialog(
     var name by remember { mutableStateOf(initialRule?.name ?: "") }
     var conditions by remember { mutableStateOf(initialRule?.conditions?.toList() ?: emptyList<RuleCondition>()) }
     var isAllowRule by remember { mutableStateOf(initialRule?.isAllowRule ?: defaultIsAllow) }
+    var ruleAction by remember { mutableStateOf(initialRule?.ruleAction ?: net.ysksg.callblocker.model.RuleAction.REJECT) }
     
     var showConditionAdder by remember { mutableStateOf(false) }
     var editingConditionIndex by remember { mutableStateOf<Int?>(null) } 
@@ -216,13 +225,12 @@ fun RuleEditDialog(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                Text("ポリシー:", style = MaterialTheme.typography.titleSmall)
-                Spacer(modifier = Modifier.height(8.dp))
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    // Reject Option
                     SegmentedButton(
-                        selected = !isAllowRule,
-                        onClick = { isAllowRule = false },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                        selected = !isAllowRule && ruleAction == net.ysksg.callblocker.model.RuleAction.REJECT,
+                        onClick = { isAllowRule = false; ruleAction = net.ysksg.callblocker.model.RuleAction.REJECT },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
                         icon = { Icon(Icons.Default.Close, null) },
                         colors = SegmentedButtonDefaults.colors(
                             activeContainerColor = MaterialTheme.colorScheme.errorContainer, 
@@ -231,10 +239,24 @@ fun RuleEditDialog(
                     ) {
                         Text("拒否")
                     }
+                    // Silence Option
+                    SegmentedButton(
+                        selected = !isAllowRule && ruleAction == net.ysksg.callblocker.model.RuleAction.SILENCE,
+                        onClick = { isAllowRule = false; ruleAction = net.ysksg.callblocker.model.RuleAction.SILENCE },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
+                        icon = { Icon(Icons.Default.Call, null) },
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = Color(0xFFFFF3E0), 
+                            activeContentColor = Color(0xFFE65100)
+                        )
+                    ) {
+                        Text("無音化")
+                    }
+                    // Allow Option
                     SegmentedButton(
                         selected = isAllowRule,
                         onClick = { isAllowRule = true },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                        shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
                         icon = { Icon(Icons.Default.Check, null) },
                         colors = SegmentedButtonDefaults.colors(
                             activeContainerColor = Color(0xFFE8F5E9), 
@@ -244,8 +266,26 @@ fun RuleEditDialog(
                         Text("許可")
                     }
                 }
-                
-                Spacer(modifier = Modifier.height(16.dp))
+
+                val actionDescription = when {
+                    isAllowRule -> "【許可】この条件に一致する番号からの着信を許可します。"
+                    ruleAction == net.ysksg.callblocker.model.RuleAction.SILENCE -> "【無音化】着信を拒否せず、呼び出し音と振動のみを停止します。相手には呼び出し中のまま聞こえます。"
+                    else -> "【拒否】着信を即座に切断します。相手には「通話中」などの信号が送られます。"
+                }
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                ) {
+                    Text(
+                        text = actionDescription,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(4.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
                 Text("条件設定 (タップして編集)", style = MaterialTheme.typography.titleMedium)
                 HorizontalDivider()
                 
@@ -294,9 +334,9 @@ fun RuleEditDialog(
                     Button(
                         onClick = {
                             val newRule = if (initialRule != null) {
-                                initialRule.copy(name = name, conditions = conditions.toMutableList(), isAllowRule = isAllowRule)
+                                initialRule.copy(name = name, conditions = conditions.toMutableList(), isAllowRule = isAllowRule, ruleAction = ruleAction)
                             } else {
-                                BlockRule(name = name, conditions = conditions.toMutableList(), isAllowRule = isAllowRule)
+                                BlockRule(name = name, conditions = conditions.toMutableList(), isAllowRule = isAllowRule, ruleAction = ruleAction)
                             }
                             onSave(newRule)
                         },

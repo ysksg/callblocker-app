@@ -7,33 +7,54 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
+ * AI解析のステータスフラグ
+ */
+enum class AiStatus {
+    PENDING,  // 解析中
+    SUCCESS,  // 成功（キャッシュ対象）
+    ERROR,    // 通信エラー・パース失敗等
+    NONE      // 解析対象外（非通知など）
+}
+
+/**
+ * ブロックの種別
+ */
+enum class BlockType {
+    ALLOWED,  // 許可（ブロックなし）
+    REJECTED, // 拒否（切断）
+    SILENCED  // 無音化（呼び出し継続）
+}
+
+/**
  * 着信履歴データ。
  */
 data class BlockHistory(
     val number: String,
     val timestamp: Long,
     val reason: String? = null,
-    val aiResult: String? = null
+    val aiResult: String? = null,
+    val aiStatus: AiStatus = AiStatus.NONE,
+    val blockType: BlockType = BlockType.ALLOWED
 )
 
 /**
  * 着信履歴をSharedPreferencesに保存・読み出しするリポジトリ。
- * 簡易的なJSON形式で保存します。
  */
 class BlockHistoryRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("block_history", Context.MODE_PRIVATE)
 
-    /**
-     * 新しい履歴を追加します。
-     * 最大100件まで保持し、古いものは削除されます。
-     */
-    fun addHistory(number: String, timestamp: Long, reason: String?, aiResult: String? = null) {
-        Log.d("BlockHistoryRepository", "履歴追加: $number")
+    fun addHistory(
+        number: String,
+        timestamp: Long,
+        reason: String?,
+        aiResult: String? = null,
+        aiStatus: AiStatus = AiStatus.NONE,
+        blockType: BlockType = BlockType.ALLOWED
+    ) {
+        Log.d("BlockHistoryRepository", "履歴追加: $number (Status: $aiStatus, Type: $blockType)")
         val currentList = getHistory().toMutableList()
-        // 新しいものを先頭に
-        currentList.add(0, BlockHistory(number, timestamp, reason, aiResult))
+        currentList.add(0, BlockHistory(number, timestamp, reason, aiResult, aiStatus, blockType))
         
-        // 最大100件まで保存
         if (currentList.size > 100) {
             currentList.removeAt(currentList.lastIndex)
         }
@@ -41,13 +62,13 @@ class BlockHistoryRepository(private val context: Context) {
         saveHistory(currentList)
     }
 
-    fun updateHistory(timestamp: Long, aiResult: String) {
+    fun updateHistory(timestamp: Long, aiResult: String, aiStatus: AiStatus) {
         val currentList = getHistory().toMutableList()
         val index = currentList.indexOfFirst { it.timestamp == timestamp }
         if (index >= 0) {
             val oldItem = currentList[index]
-            currentList[index] = oldItem.copy(aiResult = aiResult)
-            Log.d("BlockHistoryRepository", "履歴更新(AI結果): $aiResult")
+            currentList[index] = oldItem.copy(aiResult = aiResult, aiStatus = aiStatus)
+            Log.d("BlockHistoryRepository", "履歴更新(AI結果): $aiResult, Status: $aiStatus")
             saveHistory(currentList)
         }
     }
@@ -64,7 +85,9 @@ class BlockHistoryRepository(private val context: Context) {
                         number = obj.getString("number"),
                         timestamp = obj.getLong("timestamp"),
                         reason = if (obj.isNull("reason")) null else obj.getString("reason"),
-                        aiResult = if (obj.isNull("aiResult")) null else obj.getString("aiResult")
+                        aiResult = if (obj.isNull("aiResult")) null else obj.getString("aiResult"),
+                        aiStatus = try { AiStatus.valueOf(obj.optString("aiStatus", AiStatus.NONE.name)) } catch (e: Exception) { AiStatus.NONE },
+                        blockType = try { BlockType.valueOf(obj.optString("blockType", BlockType.ALLOWED.name)) } catch (e: Exception) { BlockType.ALLOWED }
                     )
                 )
             }
@@ -73,15 +96,20 @@ class BlockHistoryRepository(private val context: Context) {
         }
         return list
     }
+    
+    /**
+     * 特定の番号に対する直近の成功したAI解析結果（キャッシュ）を取得。
+     */
+    fun getCachedAiResult(number: String): String? {
+        if (number.isEmpty()) return null
+        return getHistory().find { it.number == number && it.aiStatus == AiStatus.SUCCESS }?.aiResult
+    }
 
     fun getHistoryByTimestamp(timestamp: Long): BlockHistory? {
         val list = getHistory()
         return list.find { it.timestamp == timestamp }
     }
 
-    /**
-     * 履歴を全消去します（デバッグ・テスト用）。
-     */
     fun clearHistory() {
         Log.i("BlockHistoryRepository", "着信履歴を全消去しました")
         prefs.edit { remove("history_json") }
@@ -95,6 +123,8 @@ class BlockHistoryRepository(private val context: Context) {
                 put("timestamp", item.timestamp)
                 put("reason", item.reason)
                 put("aiResult", item.aiResult)
+                put("aiStatus", item.aiStatus.name)
+                put("blockType", item.blockType.name)
             }
             jsonArray.put(obj)
         }

@@ -16,6 +16,7 @@ import java.util.Collections
 import java.util.regex.Pattern
 import com.google.i18n.phonenumbers.PhoneNumberUtil
 import com.google.i18n.phonenumbers.PhoneNumberUtil.PhoneNumberFormat
+import net.ysksg.callblocker.model.RuleAction
 import java.util.Calendar
 import java.util.Locale
 import java.text.SimpleDateFormat
@@ -121,6 +122,7 @@ class BlockRuleRepository(private val context: Context) {
                 put("name", rule.name)
                 put("isEnabled", rule.isEnabled)
                 put("isAllowRule", rule.isAllowRule)
+                put("ruleAction", rule.ruleAction.name)
                 
                 val conditionsArray = JSONArray()
                 rule.conditions.forEach { condition ->
@@ -168,6 +170,7 @@ class BlockRuleRepository(private val context: Context) {
                     name = obj.getString("name"),
                     isEnabled = obj.optBoolean("isEnabled", true),
                     isAllowRule = obj.optBoolean("isAllowRule", false),
+                    ruleAction = try { RuleAction.valueOf(obj.optString("ruleAction", RuleAction.REJECT.name)) } catch(e: Exception) { RuleAction.REJECT },
                     conditions = mutableListOf()
                 )
                 
@@ -276,7 +279,12 @@ class BlockRuleRepository(private val context: Context) {
                 if (rule.isAllowRule) {
                     return BlockResult(shouldBlock = false, matchedRuleName = rule.name)
                 } else {
-                    return BlockResult(shouldBlock = true, reason = rule.name, matchedRuleName = rule.name)
+                    return BlockResult(
+                        shouldBlock = true, 
+                        reason = rule.name, 
+                        matchedRuleName = rule.name,
+                        ruleAction = rule.ruleAction
+                    )
                 }
             }
         }

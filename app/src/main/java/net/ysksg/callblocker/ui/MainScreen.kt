@@ -29,6 +29,7 @@ import net.ysksg.callblocker.repository.BlockHistory
 import net.ysksg.callblocker.repository.BlockHistoryRepository
 import net.ysksg.callblocker.repository.BlockRuleRepository
 import net.ysksg.callblocker.repository.GeminiRepository
+import net.ysksg.callblocker.repository.SearchSettingsRepository
 import net.ysksg.callblocker.ui.rules.RuleTestDialog
 import net.ysksg.callblocker.ui.history.HistoryScreen
 import net.ysksg.callblocker.ui.rules.RuleListScreen
@@ -51,6 +52,7 @@ fun MainScreen(
     val repository = remember { BlockRuleRepository(context) }
     val historyRepo = remember { BlockHistoryRepository(context) }
     val geminiRepo = remember { GeminiRepository(context) }
+    val searchRepo = remember { SearchSettingsRepository(context) }
 
     // State
     var isOverlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
@@ -67,6 +69,9 @@ fun MainScreen(
         } else {
             mutableStateOf(true)
         }
+    }
+    var isAnswerPhoneCallsGranted by remember {
+        mutableStateOf(context.checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
     }
 
     var rules by remember { mutableStateOf(repository.getRules()) }
@@ -119,6 +124,7 @@ fun MainScreen(
     ) { results ->
         isContactPermissionGranted = results[Manifest.permission.READ_CONTACTS] ?: isContactPermissionGranted
         isPhoneStatePermissionGranted = results[Manifest.permission.READ_PHONE_STATE] ?: isPhoneStatePermissionGranted
+        isAnswerPhoneCallsGranted = results[Manifest.permission.ANSWER_PHONE_CALLS] ?: isAnswerPhoneCallsGranted
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             isNotificationPermissionGranted = results[Manifest.permission.POST_NOTIFICATIONS] ?: isNotificationPermissionGranted
         }
@@ -126,7 +132,7 @@ fun MainScreen(
 
     // 自動権限リクエストチェーン
     // 状態が変化するたびに再評価され、未許可のものがあればリクエストを投げます。
-    LaunchedEffect(isOverlayGranted, isCallScreeningGranted, isContactPermissionGranted, isPhoneStatePermissionGranted, isNotificationPermissionGranted) {
+    LaunchedEffect(isOverlayGranted, isCallScreeningGranted, isContactPermissionGranted, isPhoneStatePermissionGranted, isNotificationPermissionGranted, isAnswerPhoneCallsGranted) {
         // 1. 着信ブロック (最重要)
         if (!isCallScreeningGranted) {
              PermissionUtils.requestCallScreeningRole(context as Activity, callScreeningLauncher)
@@ -144,6 +150,7 @@ fun MainScreen(
         val missing = mutableListOf<String>()
         if (!isContactPermissionGranted) missing.add(Manifest.permission.READ_CONTACTS)
         if (!isPhoneStatePermissionGranted) missing.add(Manifest.permission.READ_PHONE_STATE)
+        if (!isAnswerPhoneCallsGranted) missing.add(Manifest.permission.ANSWER_PHONE_CALLS)
         if (!isNotificationPermissionGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             missing.add(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -196,7 +203,7 @@ fun MainScreen(
             if (selectedTab == 0) {
                  Column {
                     // 権限ステータスエリア
-                    if (!isOverlayGranted || !isCallScreeningGranted || !isContactPermissionGranted || !isPhoneStatePermissionGranted || !isNotificationPermissionGranted) {
+                    if (!isOverlayGranted || !isCallScreeningGranted || !isContactPermissionGranted || !isPhoneStatePermissionGranted || !isNotificationPermissionGranted || !isAnswerPhoneCallsGranted) {
                         Card(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp)
@@ -212,7 +219,8 @@ fun MainScreen(
                                     if (!isOverlayGranted) Button(onClick = { overlayPermissionLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))) }, modifier = Modifier.padding(end=4.dp)) { Text("オーバーレイ") }
                                     
                                     if (!isContactPermissionGranted) Button(onClick = { multiplePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS)) }, modifier = Modifier.padding(end=4.dp)) { Text("連絡先") }
-                                    if (!isPhoneStatePermissionGranted) Button(onClick = { multiplePermissionLauncher.launch(arrayOf(Manifest.permission.READ_PHONE_STATE)) }, modifier = Modifier.padding(end=4.dp)) { Text("電話状態") }
+                                    if (!isPhoneStatePermissionGranted) Button(onClick = { multiplePermissionLauncher.launch(arrayOf(Manifest.permission.READ_PHONE_STATE)) }, modifier = Modifier.padding(end=4.dp)) { Text("受話器権限") }
+                                    if (!isAnswerPhoneCallsGranted) Button(onClick = { multiplePermissionLauncher.launch(arrayOf(Manifest.permission.ANSWER_PHONE_CALLS)) }, modifier = Modifier.padding(end=4.dp)) { Text("通話操作") }
                                     if (!isNotificationPermissionGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Button(onClick = { multiplePermissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS)) }) { Text("通知") }
                                 }
                             }
@@ -270,31 +278,31 @@ fun MainScreen(
                         historyRepo.clearHistory()
                         blockHistory = emptyList()
                     },
-                    onAnalyze = { item ->
+                    onAnalyze = { number, timestamp ->
                         if (!geminiRepo.isAiAnalysisEnabled()) {
                              Toast.makeText(context, "AI解析は設定で無効になっています", Toast.LENGTH_SHORT).show()
                              return@HistoryScreen
                         }
-                        loadingItems.add(item.timestamp)
+                        loadingItems.add(timestamp)
                         val coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
                         coroutineScope.launch {
                             try {
-                                val result = geminiRepo.checkPhoneNumber(item.number)
-                                historyRepo.updateHistory(item.timestamp, result)
+                                val (aiResult, aiStatus) = geminiRepo.checkPhoneNumber(number)
+                                historyRepo.updateHistory(timestamp, aiResult, aiStatus)
                                 withContext(kotlinx.coroutines.Dispatchers.Main) {
                                     blockHistory = historyRepo.getHistory()
-                                    loadingItems.remove(item.timestamp)
+                                    loadingItems.remove(timestamp)
                                 }
                             } catch (e: Exception) {
                                 withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                    loadingItems.remove(item.timestamp)
+                                    loadingItems.remove(timestamp)
                                 }
                             }
                         }
                     },
-                    onWebSearch = { item ->
-                        val template = geminiRepo.getSearchUrlTemplate()
-                        val url = template.replace("{number}", item.number)
+                    onWebSearch = { number ->
+                        val template = searchRepo.getSearchUrlTemplate()
+                        val url = template.replace("{number}", number)
                         try {
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                             context.startActivity(intent)
@@ -302,10 +310,10 @@ fun MainScreen(
                             // Ignore
                         }
                     },
-                    onAddToRule = { item ->
+                    onAddToRule = { number ->
                         editingRuleFromHistory = BlockRule(
-                            name = "履歴から追加: ${item.number}",
-                            conditions = mutableListOf(RegexCondition(pattern = item.number))
+                            name = "履歴から追加: $number",
+                            conditions = mutableListOf(RegexCondition(pattern = number))
                         )
                         showRuleEditDialogFromHistory = true
                     }

@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import net.ysksg.callblocker.repository.GeminiRepository
+import net.ysksg.callblocker.repository.SearchSettingsRepository
 import net.ysksg.callblocker.repository.OverlaySettingsRepository
 import net.ysksg.callblocker.repository.BackupRepository
 import net.ysksg.callblocker.BuildConfig
@@ -289,21 +290,68 @@ fun OverlaySettingsScreen() {
 @Composable
 fun SearchSettingsScreen() {
     val context = LocalContext.current
-    val geminiRepo = remember { GeminiRepository(context) }
-    var searchUrl by remember { mutableStateOf(geminiRepo.getSearchUrlTemplate()) }
+    val searchRepo = remember { SearchSettingsRepository(context) }
+    var searchUrl by remember { mutableStateOf(searchRepo.getSearchUrlTemplate()) }
+    
+    // 現在のURLがプリセットのどれかに一致するか確認
+    val presets = SearchSettingsRepository.SEARCH_PRESETS
+    var selectedPresetIndex by remember {
+        val idx = presets.indexOfFirst { it.second == searchUrl }
+        mutableStateOf(if (idx >= 0 && searchUrl.isNotEmpty()) idx else presets.size - 1)
+    }
 
     Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
-        OutlinedTextField(
-            value = searchUrl,
-            onValueChange = { 
-                searchUrl = it
-                geminiRepo.setSearchUrlTemplate(it)
-            },
-            label = { Text("検索URLテンプレート") },
-            placeholder = { Text("https://google.com/search?q={number}") },
-            modifier = Modifier.fillMaxWidth(),
-            supportingText = { Text("{number} が電話番号に置換されます") }
-        )
+        Text("検索エンジンを選択", style = MaterialTheme.typography.titleMedium)
+        Text("Web検索ボタンを押した際に使用するサイトを選択します。", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        presets.forEachIndexed { index, (name, url) ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { 
+                        selectedPresetIndex = index
+                        if (url.isNotEmpty()) {
+                            searchUrl = url
+                            searchRepo.setSearchUrlTemplate(url)
+                        }
+                    }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(
+                    selected = (selectedPresetIndex == index),
+                    onClick = { 
+                        selectedPresetIndex = index
+                        if (url.isNotEmpty()) {
+                            searchUrl = url
+                            searchRepo.setSearchUrlTemplate(url)
+                        }
+                    }
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(name, style = MaterialTheme.typography.bodyLarge)
+            }
+            HorizontalDivider(modifier = Modifier.padding(start = 32.dp))
+        }
+
+        if (selectedPresetIndex == presets.size - 1) { // カスタム
+            Spacer(modifier = Modifier.height(24.dp))
+            Text("カスタムURL設定", style = MaterialTheme.typography.titleSmall)
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = searchUrl,
+                onValueChange = { 
+                    searchUrl = it
+                    searchRepo.setSearchUrlTemplate(it)
+                },
+                label = { Text("検索URLテンプレート") },
+                placeholder = { Text("https://example.com/search?q={number}") },
+                modifier = Modifier.fillMaxWidth(),
+                supportingText = { Text("{number} が電話番号に置換されます") }
+            )
+        }
     }
 }
 
@@ -316,6 +364,7 @@ fun AISettingsScreen() {
     var apiKey by remember { mutableStateOf(geminiRepo.getApiKey() ?: "") }
     var isVerifying by remember { mutableStateOf(false) }
     var isAiEnabled by remember { mutableStateOf(geminiRepo.isAiAnalysisEnabled()) }
+    var isAiCacheEnabled by remember { mutableStateOf(geminiRepo.isAiCacheEnabled()) }
     val scope = rememberCoroutineScope()
 
     var expanded by remember { mutableStateOf(false) }
@@ -350,7 +399,29 @@ fun AISettingsScreen() {
             )
         }
         
-        HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+        // Cache Toggle
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("解析結果をキャッシュする", style = MaterialTheme.typography.titleMedium)
+                Text("過去に解析した番号は再度解析せず履歴から引用します", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            }
+            Switch(
+                checked = isAiCacheEnabled,
+                onCheckedChange = {
+                    isAiCacheEnabled = it
+                    geminiRepo.setAiCacheEnabled(it)
+                },
+                enabled = isAiEnabled
+            )
+        }
+        
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
         
         val fieldsEnabled = isAiEnabled && !isVerifying
 

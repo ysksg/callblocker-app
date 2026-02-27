@@ -3,6 +3,14 @@ package net.ysksg.callblocker.model
 import java.util.UUID
 
 /**
+ * ルールに合致した時のアクション
+ */
+enum class RuleAction {
+    REJECT,  // 拒否 (切断)
+    SILENCE  // 無音化 (呼び出しのみ停止)
+}
+
+/**
  * 着信拒否・許可のルール定義。
  */
 data class BlockRule(
@@ -10,7 +18,8 @@ data class BlockRule(
     var name: String,
     val conditions: MutableList<RuleCondition> = mutableListOf(),
     var isEnabled: Boolean = true,
-    var isAllowRule: Boolean = false // trueなら許可リスト(ホワイトリスト)のルールとして扱う
+    var isAllowRule: Boolean = false, // trueなら許可リスト(ホワイトリスト)のルールとして扱う
+    var ruleAction: RuleAction = RuleAction.REJECT  // 拒否時のデフォルトアクション
 )
 
 /**

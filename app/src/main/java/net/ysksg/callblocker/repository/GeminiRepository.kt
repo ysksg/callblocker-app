@@ -21,6 +21,7 @@ class GeminiRepository(private val context: Context) {
     
     private val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
 
+
     fun getApiKey(): String? {
         return prefs.getString("gemini_api_key", null)
     }
@@ -40,17 +41,17 @@ class GeminiRepository(private val context: Context) {
     }
 
     /**
-     * Web検索ボタン用のURLテンプレートを取得。
+     * AI解析結果のキャッシュが有効かどうか。
      */
-    fun getSearchUrlTemplate(): String {
-        return prefs.getString("search_url_template", "https://www.google.com/search?q={number}") 
-            ?: "https://www.google.com/search?q={number}"
+    fun isAiCacheEnabled(): Boolean {
+        return prefs.getBoolean("is_ai_cache_enabled", true)
     }
 
-    fun setSearchUrlTemplate(url: String) {
-        Log.i("GeminiRepo", "Web検索URL設定変更: $url")
-        prefs.edit().putString("search_url_template", url).apply()
+    fun setAiCacheEnabled(enabled: Boolean) {
+        Log.i("GeminiRepo", "AI解析キャッシュ設定変更: $enabled")
+        prefs.edit().putBoolean("is_ai_cache_enabled", enabled).apply()
     }
+
 
     /**
      * 使用するAIモデル名を取得。
@@ -85,13 +86,13 @@ class GeminiRepository(private val context: Context) {
      * 指定された電話番号をAIで解析します。
      *
      * @param number 対象の電話番号
-     * @return 解析結果の文字列（エラー時はエラーメッセージ）
+     * @return 解析結果の文字列とステータスのペア
      */
-    suspend fun checkPhoneNumber(number: String): String {
+    suspend fun checkPhoneNumber(number: String): Pair<String, AiStatus> {
         val apiKey = getApiKey()
         if (apiKey.isNullOrBlank()) {
             Log.e("GeminiRepo", "APIキー未設定")
-            return "[設定エラー] APIキーが設定されていません"
+            return "[設定エラー] APIキーが設定されていません" to AiStatus.ERROR
         }
 
         val model = getModel()
@@ -109,7 +110,7 @@ class GeminiRepository(private val context: Context) {
                     conn.requestMethod = "POST"
                     conn.doOutput = true
                     conn.setRequestProperty("Content-Type", "application/json")
-                    conn.setRequestProperty("x-goog-api-key", apiKey)
+                    conn.setRequestProperty("x-goog-api-key", apiKey ?: "")
 
                     val promptTemplate = getPrompt()
                     val promptText = if (promptTemplate.contains("{number}")) {
@@ -143,16 +144,11 @@ class GeminiRepository(private val context: Context) {
                     Log.d("GeminiRepo", "サーバー応答コード: $responseCode")
                     
                     if (responseCode == 200) {
-                        BufferedReader(InputStreamReader(conn.inputStream)).use { reader ->
-                            val response = StringBuilder()
-                            var line: String?
-                            while (reader.readLine().also { line = it } != null) {
-                                response.append(line)
-                            }
-                            Log.d("GeminiRepo", "レスポンス受信完了: ${response.length}文字")
-                            // キャッシュせず直接パース結果を返す
-                            return@withContext parseGeminiResponse(response.toString())
-                        }
+                        val response = conn.inputStream.bufferedReader().use { it.readText() }
+                        Log.d("GeminiRepo", "レスポンス受信完了: ${response.length}文字")
+                        val parsed = parseGeminiResponse(response)
+                        val status = if (parsed.startsWith("[解析エラー]")) AiStatus.ERROR else AiStatus.SUCCESS
+                        return@withContext parsed to status
                     } else {
                         lastError = "[通信エラー] サーバー応答: $responseCode"
                         Log.w("GeminiRepo", "試行 ${attempt + 1} 失敗: $lastError")
@@ -168,7 +164,7 @@ class GeminiRepository(private val context: Context) {
                     kotlinx.coroutines.delay(1000) // 1秒待機して再試行
                 }
             }
-            return@withContext lastError
+            return@withContext lastError to AiStatus.ERROR
         }
     }
 

@@ -33,12 +33,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.util.Locale
+import android.provider.CallLog
 import net.ysksg.callblocker.repository.BlockHistory
 import net.ysksg.callblocker.ui.common.EmptyListMessage
 import net.ysksg.callblocker.util.PhoneNumberFormatter
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 /**
  * 着信履歴を表示する画面。
@@ -51,19 +52,19 @@ fun HistoryScreen(
     loadingItems: List<Long>,
     isAiEnabled: Boolean,
     onClearHistory: () -> Unit,
-    onAnalyze: (BlockHistory) -> Unit,
-    onWebSearch: (BlockHistory) -> Unit,
-    onAddToRule: (BlockHistory) -> Unit
+    onAnalyze: (String, Long) -> Unit,
+    onWebSearch: (String) -> Unit,
+    onAddToRule: (String) -> Unit
 ) {
     var showDeleteHistoryDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0.dp),
         topBar = {
-            Box(
+            Column(
                  modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 16.dp)
+                    .padding(vertical = 16.dp, horizontal = 16.dp)
             ) {
                 Text("着信履歴", style = MaterialTheme.typography.titleLarge)
             }
@@ -82,20 +83,26 @@ fun HistoryScreen(
                 .fillMaxSize()
         ) {
              LazyColumn(
-                contentPadding = PaddingValues(bottom = 16.dp, start = 16.dp, end = 16.dp), // Remove top padding as it's handled by topBar
+                contentPadding = PaddingValues(bottom = 16.dp, start = 16.dp, end = 16.dp),
                 modifier = Modifier.fillMaxSize()
              ) {
+                // App History
                 if (history.isEmpty()) {
                     item { EmptyListMessage("履歴はありません") }
                 }
                 items(history) { item ->
                     HistoryItemCard(
-                        item = item,
+                        number = item.number,
+                        timestamp = item.timestamp,
+                        reason = item.reason,
+                        aiResult = item.aiResult,
+                        aiStatus = item.aiStatus,
+                        blockType = item.blockType,
                         isAnalyzing = loadingItems.contains(item.timestamp),
                         isAiEnabled = isAiEnabled,
-                        onAnalyze = { onAnalyze(item) },
-                        onWebSearch = { onWebSearch(item) },
-                        onAddToRule = { onAddToRule(item) }
+                        onAnalyze = { onAnalyze(item.number, item.timestamp) },
+                        onWebSearch = { onWebSearch(item.number) },
+                        onAddToRule = { onAddToRule(item.number) }
                     )
                 }
             }
@@ -126,22 +133,29 @@ fun HistoryScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HistoryItemCard(
-    item: BlockHistory,
+    number: String,
+    timestamp: Long,
+    reason: String?,
+    aiResult: String?,
+    aiStatus: net.ysksg.callblocker.repository.AiStatus,
+    blockType: net.ysksg.callblocker.repository.BlockType,
     isAnalyzing: Boolean,
     isAiEnabled: Boolean,
     onAnalyze: () -> Unit,
     onWebSearch: () -> Unit,
     onAddToRule: () -> Unit
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     var isExpanded by remember { mutableStateOf(false) }
     
-    // Logic for determining status color (Green for Allowed, Red for Blocked/Unknown)
-    val isAllowed = item.reason == "許可"
-    val stateColor = if (isAllowed) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+    // Logic for determining status color (Green for Allowed, Red for Blocked, Orange for Silenced)
+    val stateColor = when (blockType) {
+        net.ysksg.callblocker.repository.BlockType.ALLOWED -> Color(0xFF4CAF50)
+        net.ysksg.callblocker.repository.BlockType.SILENCED -> Color(0xFFFF9800) // Orange
+        net.ysksg.callblocker.repository.BlockType.REJECTED -> MaterialTheme.colorScheme.error
+    }
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-
-    val clipboardManager = LocalClipboardManager.current
-    val context = LocalContext.current
 
     Card(
         modifier = Modifier
@@ -150,8 +164,8 @@ fun HistoryItemCard(
             .combinedClickable(
                 onClick = { isExpanded = !isExpanded },
                 onLongClick = {
-                    clipboardManager.setText(AnnotatedString(item.number))
-                    Toast.makeText(context, "コピーしました: ${item.number}", Toast.LENGTH_SHORT).show()
+                    clipboardManager.setText(AnnotatedString(number))
+                    Toast.makeText(context, "コピーしました: ${number}", Toast.LENGTH_SHORT).show()
                 }
             ),
         elevation = CardDefaults.cardElevation(1.dp),
@@ -184,8 +198,12 @@ fun HistoryItemCard(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (isAllowed) Icons.Default.Check else Icons.Default.Close,
-                            contentDescription = if (isAllowed) "Allowed" else "Blocked",
+                            imageVector = when (blockType) {
+                                net.ysksg.callblocker.repository.BlockType.ALLOWED -> Icons.Default.Check
+                                net.ysksg.callblocker.repository.BlockType.SILENCED -> Icons.Default.Call // Consider a proper silent icon if available
+                                else -> Icons.Default.Close
+                            },
+                            contentDescription = blockType.name,
                             tint = stateColor,
                             modifier = Modifier.size(18.dp)
                         )
@@ -196,37 +214,44 @@ fun HistoryItemCard(
                     // Text Content
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = PhoneNumberFormatter.format(item.number),
+                            text = PhoneNumberFormatter.format(number),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.SemiBold
                         )
                         
-                        Spacer(modifier = Modifier.height(2.dp))
-                        
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(Date(item.timestamp)),
+                                text = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(
+                                    Date(timestamp)
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (item.reason != null) {
+                            if (reason != null) {
                                 Text(
-                                    text = " • ${item.reason}", 
+                                    text = " • $reason", 
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (isAllowed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+                                    color = if (blockType == net.ysksg.callblocker.repository.BlockType.ALLOWED) MaterialTheme.colorScheme.onSurfaceVariant else stateColor
                                 )
                             }
                         }
-                        
-                        if (item.aiResult != null) {
-                            val aiDisplayText = if (item.number.isEmpty()) "非通知のため解析対象外" else item.aiResult
-                            Spacer(modifier = Modifier.height(2.dp))
+
+                        Spacer(modifier = Modifier.height(2.dp))
+
+                        // AI Status Indicator
+                        if (isAiEnabled && number.isNotEmpty()) {
+                            val aiStatusColor = when (aiStatus) {
+                                net.ysksg.callblocker.repository.AiStatus.SUCCESS -> MaterialTheme.colorScheme.tertiary
+                                net.ysksg.callblocker.repository.AiStatus.ERROR -> MaterialTheme.colorScheme.error
+                                net.ysksg.callblocker.repository.AiStatus.PENDING -> Color.Gray
+                                else -> Color.Gray
+                            }
                             Text(
-                                text = "AI: $aiDisplayText", 
-                                style = MaterialTheme.typography.bodySmall, 
-                                color = MaterialTheme.colorScheme.tertiary, 
-                                fontWeight = FontWeight.Bold
+                                text = "AI: ${aiResult ?: "未解析"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = aiStatusColor,
+                                fontWeight = if (aiStatus == net.ysksg.callblocker.repository.AiStatus.SUCCESS) FontWeight.Bold else FontWeight.Normal
                             )
                         }
                     }
@@ -256,11 +281,11 @@ fun HistoryItemCard(
                         TextButton(
                             onClick = {
                                 val intent = Intent(Intent.ACTION_DIAL).apply {
-                                    data = Uri.parse("tel:${item.number}")
+                                    data = Uri.parse("tel:$number")
                                 }
                                 context.startActivity(intent)
                             },
-                            enabled = item.number.isNotEmpty()
+                            enabled = number.isNotEmpty()
                         ) {
                             Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -270,7 +295,7 @@ fun HistoryItemCard(
                         // Web Search Button
                         TextButton(
                             onClick = onWebSearch,
-                            enabled = item.number.isNotEmpty()
+                            enabled = number.isNotEmpty()
                         ) {
                             Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -280,9 +305,9 @@ fun HistoryItemCard(
                         // AI Analyze Button
                         TextButton(
                             onClick = { if (!isAnalyzing && isAiEnabled) onAnalyze() },
-                            enabled = !isAnalyzing && isAiEnabled && item.number.isNotEmpty(),
+                            enabled = !isAnalyzing && isAiEnabled && number.isNotEmpty(),
                             colors = ButtonDefaults.textButtonColors(
-                                contentColor = if(isAiEnabled && item.number.isNotEmpty()) MaterialTheme.colorScheme.tertiary else Color.Gray
+                                contentColor = if(isAiEnabled && number.isNotEmpty()) MaterialTheme.colorScheme.tertiary else Color.Gray
                             )
                         ) {
                             if (isAnalyzing) {

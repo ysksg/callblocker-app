@@ -11,14 +11,15 @@ import android.content.Context
 import android.os.Build
 import android.telecom.CallScreeningService.CallResponse
 import androidx.core.app.NotificationCompat
-import kotlinx.coroutines.launch
 import net.ysksg.callblocker.MainActivity
+import net.ysksg.callblocker.util.PhoneNumberFormatter
+import net.ysksg.callblocker.model.RuleAction
 import net.ysksg.callblocker.repository.BlockRuleRepository
 import net.ysksg.callblocker.repository.BlockHistoryRepository
-import net.ysksg.callblocker.model.BlockResult
-import net.ysksg.callblocker.repository.OverlaySettingsRepository
 import net.ysksg.callblocker.repository.GeminiRepository
-import net.ysksg.callblocker.util.PhoneNumberFormatter
+import net.ysksg.callblocker.repository.BlockType
+import net.ysksg.callblocker.repository.AiStatus
+import kotlinx.coroutines.launch
 
 
 /**
@@ -45,46 +46,61 @@ class CallDetectorService : CallScreeningService() {
         }
 
         val repository = BlockRuleRepository(applicationContext)
+        val geminiRepo = GeminiRepository(applicationContext)
+        val historyRepo = BlockHistoryRepository(applicationContext)
+        val isAiEnabled = geminiRepo.isAiAnalysisEnabled()
         val blockResult = repository.checkBlock(rawNumber)
         Log.i("CallDetectorService", "判定結果: ${blockResult.shouldBlock}, 理由: ${blockResult.reason}")
 
         val timestamp = System.currentTimeMillis()
-        val historyRepo = BlockHistoryRepository(applicationContext)
 
         // 共通: 履歴への初期登録とAI解析開始
         val historyReason = if (blockResult.shouldBlock) blockResult.reason else "許可"
 
         if (blockResult.shouldBlock) {
-             Log.i("CallDetectorService", "$rawNumber からの着信をブロックします")
+             val actionName = if (blockResult.ruleAction == RuleAction.SILENCE) "無音化" else "ブロック"
+             Log.i("CallDetectorService", "$rawNumber からの着信を ${actionName} します")
         } else {
              Log.i("CallDetectorService", "$rawNumber からの着信を許可し、オーバーレイを表示します")
         }
-
-        val geminiRepo = GeminiRepository(applicationContext)
-        val isAiEnabled = geminiRepo.isAiAnalysisEnabled()
-
-        val initialAiResult = when {
-            rawNumber.isEmpty() -> "非通知のため解析対象外"
-            isAiEnabled -> "AI解析中..."
-            else -> "AI解析は無効です。"
+        
+        val historyBlockType = when {
+            !blockResult.shouldBlock -> BlockType.ALLOWED
+            blockResult.ruleAction == RuleAction.SILENCE -> BlockType.SILENCED
+            else -> BlockType.REJECTED
         }
+
+        val initialAiStatus = if (rawNumber.isEmpty()) AiStatus.NONE else AiStatus.PENDING
         
-        historyRepo.addHistory(rawNumber, timestamp, historyReason, initialAiResult)
-        
-        if (isAiEnabled && rawNumber.isNotEmpty()) {
-            startAiAnalysis(rawNumber, timestamp)
+        // キャッシュチェック
+        var cachedResult: String? = null
+        if (isAiEnabled && rawNumber.isNotEmpty() && geminiRepo.isAiCacheEnabled()) {
+             cachedResult = historyRepo.getCachedAiResult(rawNumber)
+        }
+
+        if (cachedResult != null) {
+            Log.i("CallDetectorService", "キャッシュされた解析結果を使用します: $cachedResult")
+            historyRepo.addHistory(rawNumber, timestamp, historyReason, cachedResult, AiStatus.SUCCESS, historyBlockType)
+        } else {
+            val initialAiResult = ""
+            val initialAiStatus = if (rawNumber.isEmpty()) AiStatus.NONE else AiStatus.PENDING
+            historyRepo.addHistory(rawNumber, timestamp, historyReason, initialAiResult, initialAiStatus, historyBlockType)
+            if (isAiEnabled && rawNumber.isNotEmpty()) {
+                startAiAnalysis(rawNumber, timestamp)
+            }
         }
 
         if (blockResult.shouldBlock) {
             // ブロック処理
+            val isSilence = blockResult.ruleAction == RuleAction.SILENCE
             val formattedNumber = PhoneNumberFormatter.format(rawNumber)
-            showBlockNotification(formattedNumber, blockResult.reason)
+            showBlockNotification(formattedNumber, blockResult.reason, isSilence)
 
             val response = CallResponse.Builder()
                 .setDisallowCall(true)
-                .setRejectCall(true)
+                .setRejectCall(!isSilence) // 無音化の場合は拒否（切断）しない
                 .setSkipCallLog(false)
-                .setSkipNotification(false) // アプリ側で通知を出すためfalseも可だが、念のためシステム通知も許可
+                .setSkipNotification(false)
                 .build()
             
             respondToCall(callDetails, response)
@@ -125,16 +141,18 @@ class CallDetectorService : CallScreeningService() {
          kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             val historyRepo = BlockHistoryRepository(applicationContext)
             var resultString = ""
+            var status = AiStatus.ERROR
             try {
                 val geminiRepo = GeminiRepository(applicationContext)
-                val aiResult = geminiRepo.checkPhoneNumber(number)
-                Log.i("CallDetectorService", "AI解析完了: $aiResult")
-                historyRepo.updateHistory(timestamp, aiResult)
+                val (aiResult, aiStatus) = geminiRepo.checkPhoneNumber(number)
+                Log.i("CallDetectorService", "AI解析完了: $aiResult (Status: $aiStatus)")
+                historyRepo.updateHistory(timestamp, aiResult, aiStatus)
                 resultString = aiResult
+                status = aiStatus
             } catch (e: Exception) {
                 Log.e("CallDetectorService", "AI解析失敗: ${e.message}", e)
                 resultString = "AI解析失敗"
-                historyRepo.updateHistory(timestamp, resultString)
+                historyRepo.updateHistory(timestamp, resultString, AiStatus.ERROR)
             }
             
             // Overlay等への通知
@@ -142,15 +160,17 @@ class CallDetectorService : CallScreeningService() {
                 putExtra("PHONE_NUMBER", number)
                 putExtra("TIMESTAMP", timestamp)
                 putExtra("AI_RESULT", resultString)
+                putExtra("AI_STATUS", status.name)
                 setPackage(applicationContext.packageName)
             }
             sendBroadcast(intent)
         }
     }
 
-    private fun showBlockNotification(phoneNumber: String, reason: String?) {
+    private fun showBlockNotification(phoneNumber: String, reason: String?, isSilence: Boolean = false) {
         val channelId = "blocked_call_channel_popup"
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val actionLabel = if (isSilence) "無音化" else "ブロック"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             // チャンネルが存在しない場合は作成
@@ -180,9 +200,9 @@ class CallDetectorService : CallScreeningService() {
         val text = if (reason != null) "電話番号: $phoneNumber\n理由: $reason" else "電話番号: $phoneNumber"
 
         val notification = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(android.R.drawable.ic_menu_close_clear_cancel) // ×アイコン
-            .setContentTitle("着信をブロックしました")
-            .setContentText("ブロック理由: ${reason ?: "不明"}")
+            .setSmallIcon(if (isSilence) android.R.drawable.ic_lock_silent_mode else android.R.drawable.ic_menu_close_clear_cancel)
+            .setContentTitle("着信を${actionLabel}しました")
+            .setContentText("${actionLabel}理由: ${reason ?: "不明"}")
             .setStyle(NotificationCompat.BigTextStyle().bigText(text)) // 詳細表示用にBigText
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH) 

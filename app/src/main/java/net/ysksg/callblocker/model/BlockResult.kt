@@ -10,5 +10,6 @@ package net.ysksg.callblocker.model
 data class BlockResult(
     val shouldBlock: Boolean,
     val reason: String? = null,
-    val matchedRuleName: String? = null
+    val matchedRuleName: String? = null,
+    val ruleAction: RuleAction = RuleAction.REJECT
 )
