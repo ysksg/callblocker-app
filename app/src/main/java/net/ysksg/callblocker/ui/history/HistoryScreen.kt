@@ -220,9 +220,10 @@ fun HistoryItemCard(
                         }
                         
                         if (item.aiResult != null) {
+                            val aiDisplayText = if (item.number.isEmpty()) "非通知のため解析対象外" else item.aiResult
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "AI: ${item.aiResult}", 
+                                text = "AI: $aiDisplayText", 
                                 style = MaterialTheme.typography.bodySmall, 
                                 color = MaterialTheme.colorScheme.tertiary, 
                                 fontWeight = FontWeight.Bold
@@ -258,7 +259,8 @@ fun HistoryItemCard(
                                     data = Uri.parse("tel:${item.number}")
                                 }
                                 context.startActivity(intent)
-                            }
+                            },
+                            enabled = item.number.isNotEmpty()
                         ) {
                             Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -266,7 +268,10 @@ fun HistoryItemCard(
                         }
 
                         // Web Search Button
-                        TextButton(onClick = onWebSearch) {
+                        TextButton(
+                            onClick = onWebSearch,
+                            enabled = item.number.isNotEmpty()
+                        ) {
                             Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("検索")
@@ -275,9 +280,9 @@ fun HistoryItemCard(
                         // AI Analyze Button
                         TextButton(
                             onClick = { if (!isAnalyzing && isAiEnabled) onAnalyze() },
-                            enabled = !isAnalyzing && isAiEnabled,
+                            enabled = !isAnalyzing && isAiEnabled && item.number.isNotEmpty(),
                             colors = ButtonDefaults.textButtonColors(
-                                contentColor = if(isAiEnabled) MaterialTheme.colorScheme.tertiary else Color.Gray
+                                contentColor = if(isAiEnabled && item.number.isNotEmpty()) MaterialTheme.colorScheme.tertiary else Color.Gray
                             )
                         ) {
                             if (isAnalyzing) {

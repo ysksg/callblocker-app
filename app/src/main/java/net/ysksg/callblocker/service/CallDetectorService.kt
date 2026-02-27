@@ -62,11 +62,16 @@ class CallDetectorService : CallScreeningService() {
 
         val geminiRepo = GeminiRepository(applicationContext)
         val isAiEnabled = geminiRepo.isAiAnalysisEnabled()
-        val initialAiResult = if (isAiEnabled) "AI解析中..." else "AI解析は無効です。"
+
+        val initialAiResult = when {
+            rawNumber.isEmpty() -> "非通知のため解析対象外"
+            isAiEnabled -> "AI解析中..."
+            else -> "AI解析は無効です。"
+        }
         
         historyRepo.addHistory(rawNumber, timestamp, historyReason, initialAiResult)
         
-        if (isAiEnabled) {
+        if (isAiEnabled && rawNumber.isNotEmpty()) {
             startAiAnalysis(rawNumber, timestamp)
         }
 
@@ -162,8 +167,11 @@ class CallDetectorService : CallScreeningService() {
             }
         }
 
-        // 通知タップ時にMainActivityを開く
-        val intent = Intent(this, MainActivity::class.java)
+        // 通知タップ時にMainActivityを開く (履歴タブを指定)
+        val intent = Intent(this, MainActivity::class.java).apply {
+            putExtra("EXTRA_NAVIGATE_TO", "HISTORY")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT

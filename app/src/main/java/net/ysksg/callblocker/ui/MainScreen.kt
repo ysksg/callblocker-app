@@ -43,7 +43,10 @@ import net.ysksg.callblocker.ui.settings.UpdateCheckDialog
 import android.widget.Toast
 
 @Composable
-fun MainScreen() {
+fun MainScreen(
+    initialNavigation: String? = null,
+    onNavigationHandled: () -> Unit = {}
+) {
     val context = LocalContext.current
     val repository = remember { BlockRuleRepository(context) }
     val historyRepo = remember { BlockHistoryRepository(context) }
@@ -70,6 +73,15 @@ fun MainScreen() {
     var selectedTab by remember { mutableStateOf(0) }
     var blockHistory by remember { mutableStateOf(historyRepo.getHistory()) }
     var showRuleTestDialog by remember { mutableStateOf(false) }
+
+    // External Navigation Handling
+    LaunchedEffect(initialNavigation) {
+        if (initialNavigation == "HISTORY") {
+            selectedTab = 1
+            blockHistory = historyRepo.getHistory()
+            onNavigationHandled()
+        }
+    }
     
     // Rule Edit from History
     var showRuleEditDialogFromHistory by remember { mutableStateOf(false) }

@@ -400,7 +400,7 @@ fun OverlayScreen(
                     
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = PhoneNumberFormatter.format(phoneNumber),
+                        text = if (phoneNumber.isEmpty()) "（非通知）" else PhoneNumberFormatter.format(phoneNumber),
                         color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
@@ -415,7 +415,7 @@ fun OverlayScreen(
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
                             .padding(12.dp)
                     ) {
-                        if (isLoading) {
+                        if (isLoading && phoneNumber.isNotEmpty()) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(24.dp), 
@@ -430,7 +430,7 @@ fun OverlayScreen(
                                 Text("Gemini AI解析:", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = geminiResult ?: "情報なし",
+                                    text = geminiResult ?: (if (phoneNumber.isEmpty()) "非通知のため解析対象外" else "情報なし"),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
@@ -443,7 +443,10 @@ fun OverlayScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        Button(onClick = onSearch) {
+                        Button(
+                            onClick = onSearch,
+                            enabled = phoneNumber.isNotEmpty()
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Search,
                                 contentDescription = null,

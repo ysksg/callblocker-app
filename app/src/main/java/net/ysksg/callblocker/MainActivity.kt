@@ -1,6 +1,7 @@
 package net.ysksg.callblocker
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -22,8 +23,24 @@ import net.ysksg.callblocker.ui.theme.CallBlockerTheme
  * 実際のUI構築ロジックは [MainScreen] に委譲しています。
  */
 class MainActivity : ComponentActivity() {
+    private var navigateToTab = mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val target = intent?.getStringExtra("EXTRA_NAVIGATE_TO")
+        if (target != null) {
+            navigateToTab.value = target
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleIntent(intent)
         setContent {
             val context = LocalContext.current
             val themeRepo = remember { ThemeRepository(context) }
@@ -55,7 +72,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MainScreen()
+                    MainScreen(
+                        initialNavigation = navigateToTab.value,
+                        onNavigationHandled = { navigateToTab.value = null }
+                    )
                 }
             }
         }
