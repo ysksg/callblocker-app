@@ -50,3 +50,7 @@ Desktop.ini
 
 # vscode
 .vscode/
+
+# Local Claude Code instructions (not shared via repo history)
+.claude/
+CLAUDE.md
