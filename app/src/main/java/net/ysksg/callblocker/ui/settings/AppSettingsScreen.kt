@@ -371,22 +371,23 @@ fun AISettingsScreen() {
     data class GeminiModelInfo(val id: String, val displayName: String, val isPaidOnly: Boolean = false)
     
     val modelOptions = listOf(
+        GeminiModelInfo("gemini-3.6-flash", "Gemini 3.6 Flash"),
+        GeminiModelInfo("gemini-3.5-flash", "Gemini 3.5 Flash"),
+        GeminiModelInfo("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
+        GeminiModelInfo("gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite"),
         GeminiModelInfo("gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview", isPaidOnly = true),
         GeminiModelInfo("gemini-3-flash-preview", "Gemini 3 Flash Preview", isPaidOnly = true),
         GeminiModelInfo("gemini-2.5-pro", "Gemini 2.5 Pro", isPaidOnly = true),
         GeminiModelInfo("gemini-2.5-flash", "Gemini 2.5 Flash"),
-        GeminiModelInfo("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"),
-        GeminiModelInfo("gemini-2.0-flash", "Gemini 2.0 Flash")
+        GeminiModelInfo("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite")
     )
 
     var expanded by remember { mutableStateOf(false) }
     var selectedModelId by remember { mutableStateOf(geminiRepo.getModel()) }
     var prompt by remember { mutableStateOf(geminiRepo.getPrompt()) }
     
-    // 現在のIDに対応する表示名を取得
-    val selectedModelDisplayName = modelOptions.find { it.id == selectedModelId }?.let { 
-        if (it.isPaidOnly) "${it.displayName} (有料版APIのみ利用可能)" else it.displayName
-    } ?: selectedModelId
+    // 現在のIDが一覧内のモデルかどうか(有料版バッジ表示用)
+    val matchedModelInfo = modelOptions.find { it.id == selectedModelId }
 
     Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
         // Master Toggle
@@ -472,14 +473,24 @@ fun AISettingsScreen() {
             modifier = Modifier.fillMaxWidth()
         ) {
             OutlinedTextField(
-                value = selectedModelDisplayName,
-                onValueChange = {},
-                readOnly = true,
+                value = selectedModelId,
+                onValueChange = {
+                    selectedModelId = it
+                    geminiRepo.setModel(it)
+                },
                 label = { Text("使用モデル") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = fieldsEnabled).fillMaxWidth(),
-                enabled = fieldsEnabled
+                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryEditable, enabled = fieldsEnabled).fillMaxWidth(),
+                enabled = fieldsEnabled,
+                singleLine = true,
+                supportingText = {
+                    if (matchedModelInfo?.isPaidOnly == true) {
+                        Text("有料版APIのみ利用可能", color = MaterialTheme.colorScheme.error)
+                    } else {
+                        Text("一覧にないモデルIDも直接入力できます")
+                    }
+                }
             )
             ExposedDropdownMenu(
                 expanded = expanded,
