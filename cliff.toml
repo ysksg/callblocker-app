@@ -18,14 +18,14 @@ split_commits = false
 commit_parsers = [
   { message = "^feat", group = "✨ 新機能" },
   { message = "^fix", group = "🐛 修正" },
-  { message = "^docs", group = "📝 ドキュメント" },
-  { message = "^style", group = "🎨 改善" },
-  { message = "^refactor", group = "♻️ リファクタリング" },
-  { message = "^perf", group = "⚡ パフォーマンス" },
-  { message = "^test", group = "✅ テスト" },
-  { message = "^chore|^ci", group = "🔧 その他" },
-  { message = ".*", group = "📌 変更" },
+  { message = "^perf", group = "⚡ パフォーマンス改善" },
+  { message = "^docs", skip = true },
+  { message = "^style", skip = true },
+  { message = "^refactor", skip = true },
+  { message = "^test", skip = true },
+  { message = "^chore|^ci|^build", skip = true },
+  { message = ".*", group = "📌 その他の変更" },
 ]
-filter_commits = false
+filter_commits = true
 tag_pattern = "v[0-9]*"
 sort_commits = "oldest"
