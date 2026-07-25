@@ -52,7 +52,3 @@ CallBlocker は、Android OS の Call Screening API を利用した強力な着�
 
 - このアプリは「着信ブロックロール（Call Screening Service）」を利用します。アプリ内の案内に従って、システム設定で本アプリをデフォルトの着信ブロックアプリとして許可してください。
 - AI 解析機能を利用するには、別途 [Google AI Studio](https://aistudio.google.com/) で取得した API キーが必要です。
-
-## 変更履歴
-
-バージョンごとの変更内容は [CHANGELOG.md](CHANGELOG.md) を参照してください。

@@ -4,6 +4,13 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// git のコミット数からversionCodeを自動算出する(手動更新不要、常に単調増加)
+fun gitCommitCount(): Int {
+    return providers.exec {
+        commandLine("git", "rev-list", "--count", "HEAD")
+    }.standardOutput.asText.get().trim().toInt()
+}
+
 android {
     namespace = "net.ysksg.callblocker"
     compileSdk = 36
@@ -12,8 +19,8 @@ android {
         applicationId = "net.ysksg.callblocker"
         minSdk = 29
         targetSdk = 36
-        versionCode = 8
-        versionName = "2.1"
+        versionCode = gitCommitCount()
+        versionName = "2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
