@@ -2,27 +2,32 @@ package net.ysksg.callblocker.ui.rules
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 
 import net.ysksg.callblocker.model.BlockRule
+import net.ysksg.callblocker.model.ConditionLogic
 import net.ysksg.callblocker.model.ContactCondition
 import net.ysksg.callblocker.model.RegexCondition
 import net.ysksg.callblocker.model.RuleCondition
@@ -41,6 +46,99 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.input.KeyboardType
+
+/**
+ * 条件の結合方法(logicOperator)だけを差し替えたコピーを返す。
+ * RuleConditionは実装がdata classごとに異なるため、型ごとにcopyを呼び分ける。
+ */
+fun withLogicOperator(condition: RuleCondition, logic: ConditionLogic): RuleCondition {
+    return when (condition) {
+        is RegexCondition -> condition.copy(logicOperator = logic)
+        is ContactCondition -> condition.copy(logicOperator = logic)
+        is TimeCondition -> condition.copy(logicOperator = logic)
+        else -> condition
+    }
+}
+
+/**
+ * 2つの条件の「間」に挟んで表示する結合コネクタ。
+ * AND: 上下の条件とつながる縦線をそのまま通す(ひとまとまりであることを示す)
+ * OR : 全幅の区切り線を入れることでグループが切り替わることを示す
+ * AND/OR切り替えトグルは行の中央に重ねて配置し、式と式の間でそのまま結合方法を変更できるようにする。
+ * AND/ORどちらでも行の高さは固定(トグルの大きさが変わらないようにするため)。
+ */
+@Composable
+private fun ConditionConnectorRow(
+    logic: ConditionLogic,
+    onChange: (ConditionLogic) -> Unit
+) {
+    val isOr = logic == ConditionLogic.OR
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp) // AND/ORで高さが変わらないように固定(ボタンが広めなのでそれに合わせた高さ)
+    ) {
+        if (isOr) {
+            // ORの区切り線(全幅)
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth().align(Alignment.Center),
+                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f)
+            )
+        } else {
+            // ANDの縦線。条件行のガター(幅20dp)の中央と揃える
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 9.dp)
+                    .width(2.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+        }
+
+        // AND/OR切り替えトグルは常に行の中央に表示する
+        CompactLogicToggle(
+            logic = logic,
+            onChange = onChange,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .background(MaterialTheme.colorScheme.surface) // 背後の線と重なる部分を隠す
+        )
+    }
+}
+
+/**
+ * 「ひとつ前の条件」とこの条件をどう結合するか(AND/OR)を切り替える、小型のトグル。
+ * 条件行の先頭に直接並べて表示することで、どの条件に紐づく設定かを分かりやすくする。
+ */
+@Composable
+private fun CompactLogicToggle(
+    logic: ConditionLogic,
+    onChange: (ConditionLogic) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(4.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+    ) {
+        listOf(ConditionLogic.AND to "AND", ConditionLogic.OR to "OR").forEach { (value, label) ->
+            val selected = logic == value
+            Text(
+                text = label,
+                fontSize = 10.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .width(40.dp) // "AND"と"OR"で文字数が異なっても幅を揃える(タップしやすいよう広め)
+                    .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                    .clickable { onChange(value) }
+                    .padding(vertical = 6.dp)
+            )
+        }
+    }
+}
 
 val BLOCK_PRESETS = listOf(
     "連絡先に登録されている番号" to "CONTACT_REGISTERED",
@@ -152,10 +250,20 @@ fun RuleCard(
                     
                     if (rule.conditions.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(2.dp))
-                        rule.conditions.forEach { cond ->
+                        rule.conditions.forEachIndexed { index, cond ->
+                            val isOrGroupStart = index > 0 && cond.logicOperator == net.ysksg.callblocker.model.ConditionLogic.OR
+                            if (isOrGroupStart) {
+                                // ORでANDのまとまりが切り替わる箇所は、少し間隔を空けて区切りを示す
+                                Spacer(modifier = Modifier.height(3.dp))
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                val prefix = when {
+                                    index == 0 -> "•"
+                                    isOrGroupStart -> "または"
+                                    else -> "   ∟かつ" // ひとつ前の条件とANDで連結していることを示すインデント付き接続記号
+                                }
                                 Text(
-                                    text = "• ${cond.getDescription()}",
+                                    text = "$prefix ${cond.getDescription()}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -297,22 +405,59 @@ fun RuleEditDialog(
                         }
                     }
                     itemsIndexed(conditions) { index, cond ->
+                        // 直前・直後の条件とANDで繋がっているか(縦線をつなげる対象かどうか)
+                        val connectsToPrev = index > 0 && cond.logicOperator == ConditionLogic.AND
+                        val connectsToNext = index < conditions.lastIndex && conditions[index + 1].logicOperator == ConditionLogic.AND
+
+                        // 条件そのものの行。左右の余白はガター/アイコンで確保するため、
+                        // Row自体には縦方向のpaddingを付けない(上下の条件行・コネクタ行と隙間なく接続させるため)
                         Row(
-                            verticalAlignment = Alignment.CenterVertically, 
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .height(IntrinsicSize.Min)
                                 .clickable {
                                      editingConditionIndex = index
                                      showConditionAdder = true
                                 }
-                                .padding(vertical = 8.dp)
                         ) {
-                            Text("・${cond.getDescription()}", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            // 左側のガター: AND条件同士を縦線でつないで「ひとまとまり」であることを示す
+                            Box(modifier = Modifier.width(20.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                                if (connectsToPrev || connectsToNext) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(2.dp)
+                                            .fillMaxHeight()
+                                            .background(MaterialTheme.colorScheme.primary)
+                                    )
+                                }
+                            }
+
+                            Text(
+                                "${cond.getDescription()}",
+                                modifier = Modifier.weight(1f).padding(vertical = 10.dp),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                             IconButton(onClick = { conditions = conditions - cond }) {
                                 Icon(Icons.Default.Close, contentDescription = "削除", tint = Color.Gray)
                             }
                         }
-                        HorizontalDivider()
+
+                        if (index < conditions.lastIndex) {
+                            // 次の条件との間に、結合方法(AND/OR)を示すコネクタを「式と式の間」に挟む。
+                            // AND: 縦線を途切れさせずにそのまま通す / OR: 縦線を途切れさせて区切りを示す
+                            val nextLogic = conditions[index + 1].logicOperator
+                            ConditionConnectorRow(
+                                logic = nextLogic,
+                                onChange = { newLogic ->
+                                    val mutable = conditions.toMutableList()
+                                    mutable[index + 1] = withLogicOperator(conditions[index + 1], newLogic)
+                                    conditions = mutable
+                                }
+                            )
+                        } else {
+                            HorizontalDivider()
+                        }
                     }
                 }
                 
@@ -354,8 +499,11 @@ fun RuleEditDialog(
             initialCondition = if (editingConditionIndex != null) conditions[editingConditionIndex!!] else null,
             onApply = { newCond ->
                 if (editingConditionIndex != null) {
+                    // ConditionAdderDialogは結合方法(logicOperator)を扱わないため、
+                    // 編集前の条件が持っていた値を引き継ぐ
+                    val existingLogic = conditions[editingConditionIndex!!].logicOperator
                     val mutable = conditions.toMutableList()
-                    mutable[editingConditionIndex!!] = newCond
+                    mutable[editingConditionIndex!!] = withLogicOperator(newCond, existingLogic)
                     conditions = mutable
                 } else {
                     conditions = conditions + newCond

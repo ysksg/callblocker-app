@@ -11,6 +11,14 @@ enum class RuleAction {
 }
 
 /**
+ * 複数条件の結合方法。
+ */
+enum class ConditionLogic {
+    AND, // すべての条件を満たした場合にマッチ
+    OR   // いずれかの条件を満たした場合にマッチ
+}
+
+/**
  * 着信拒否・許可のルール定義。
  */
 data class BlockRule(
@@ -28,6 +36,9 @@ data class BlockRule(
 interface RuleCondition {
     val type: String // "regex" (正規表現), "contact" (連絡先)
     val isInverse: Boolean // 条件を反転するか (NOT条件)
+    // この条件を「ひとつ前の条件」とどう結合するか。
+    // conditionsリストの先頭要素では無視される。
+    val logicOperator: ConditionLogic
     fun getDescription(): String
 }
 
@@ -36,7 +47,8 @@ interface RuleCondition {
  */
 data class RegexCondition(
     val pattern: String,
-    override val isInverse: Boolean = false
+    override val isInverse: Boolean = false,
+    override val logicOperator: ConditionLogic = ConditionLogic.AND
 ) : RuleCondition {
     override val type = "regex"
     override fun getDescription(): String {
@@ -48,7 +60,8 @@ data class RegexCondition(
  * 連絡先の登録有無による条件。
  */
 data class ContactCondition(
-    override val isInverse: Boolean = false // false=登録済み, true=未登録
+    override val isInverse: Boolean = false, // false=登録済み, true=未登録
+    override val logicOperator: ConditionLogic = ConditionLogic.AND
 ) : RuleCondition {
     override val type = "contact"
     override fun getDescription(): String {
@@ -71,7 +84,8 @@ data class TimeCondition(
     val endHour: Int? = null,
     val endMinute: Int? = null,
     val daysOfWeek: List<Int> = emptyList(), // Calendar.SUNDAY(1) ... SATURDAY(7)
-    override val isInverse: Boolean = false
+    override val isInverse: Boolean = false,
+    override val logicOperator: ConditionLogic = ConditionLogic.AND
 ) : RuleCondition {
     override val type = "time"
     override fun getDescription(): String {

@@ -8,7 +8,9 @@ import androidx.core.content.edit
 import net.ysksg.callblocker.model.BlockResult
 import net.ysksg.callblocker.model.BlockRule
 import net.ysksg.callblocker.model.ContactCondition
+import net.ysksg.callblocker.model.ConditionLogic
 import net.ysksg.callblocker.model.RegexCondition
+import net.ysksg.callblocker.model.RuleCondition
 import net.ysksg.callblocker.model.TimeCondition
 import org.json.JSONArray
 import org.json.JSONObject
@@ -129,6 +131,7 @@ class BlockRuleRepository(private val context: Context) {
                     val condObj = JSONObject()
                     condObj.put("type", condition.type)
                     condObj.put("isInverse", condition.isInverse)
+                    condObj.put("logicOperator", condition.logicOperator.name)
                     when (condition) {
                         is RegexCondition -> {
                             condObj.put("pattern", condition.pattern)
@@ -179,10 +182,13 @@ class BlockRuleRepository(private val context: Context) {
                     val condObj = conditionsArray.getJSONObject(j)
                     val type = condObj.getString("type")
                     val isInverse = condObj.optBoolean("isInverse", false)
-                    
+                    val logicOperator = try {
+                        ConditionLogic.valueOf(condObj.optString("logicOperator", ConditionLogic.AND.name))
+                    } catch (e: Exception) { ConditionLogic.AND }
+
                     when (type) {
                         "regex" -> {
-                            rule.conditions.add(RegexCondition(condObj.getString("pattern"), isInverse))
+                            rule.conditions.add(RegexCondition(condObj.getString("pattern"), isInverse, logicOperator))
                         }
                         "contact" -> {
                             // マイグレーション: 旧形式 "isRegistered" のサポート
@@ -191,7 +197,7 @@ class BlockRuleRepository(private val context: Context) {
                                 val isRegistered = condObj.getBoolean("isRegistered")
                                 if (!isRegistered) effectiveInverse = true
                             }
-                            rule.conditions.add(ContactCondition(effectiveInverse))
+                            rule.conditions.add(ContactCondition(effectiveInverse, logicOperator))
                         }
                         "country" -> {
                             // countryルールはサポート外のためスキップ
@@ -212,7 +218,8 @@ class BlockRuleRepository(private val context: Context) {
                                 endHour = if(condObj.has("endHour")) condObj.getInt("endHour") else null,
                                 endMinute = if(condObj.has("endMinute")) condObj.getInt("endMinute") else null,
                                 daysOfWeek = daysList,
-                                isInverse = isInverse
+                                isInverse = isInverse,
+                                logicOperator = logicOperator
                             ))
                         }
                     }
@@ -295,40 +302,58 @@ class BlockRuleRepository(private val context: Context) {
 
     private fun isRuleMatched(rule: BlockRule, uniqueList: List<String>): Boolean {
         if (rule.conditions.isEmpty()) return false
-        
+
         Log.d("BlockRepo", "判定中のルール: ${rule.name} (許可=${rule.isAllowRule})")
-        
-        // すべての条件を満たす必要がある (AND条件)
-        for (condition in rule.conditions) {
-            val condMatched = when (condition) {
-                is RegexCondition -> {
-                    val pattern = try { Pattern.compile(condition.pattern) } catch(e:Exception){ null }
-                    pattern?.let { p ->
-                        uniqueList.any { p.matcher(it).find() }
-                    } ?: false
-                }
-                is ContactCondition -> {
-                    val hasContact = uniqueList.any { isContactExists(it) }
-                    hasContact
-                }
-                is TimeCondition -> {
-                     isTimeMatched(condition)
-                }
-                else -> false
-            }
-            
-            // 条件の反転 (NOT条件) 処理
-            val finalMatched = if (condition.isInverse) !condMatched else condMatched
-            
-            Log.d("BlockRepo", "  条件判定 [${condition.getDescription()}]: マッチ=$condMatched, 反転=${condition.isInverse} -> 結果=$finalMatched")
-            
-            if (!finalMatched) {
-                Log.d("BlockRepo", "  -> 不適合")
-                return false
+
+        // 条件は「OR」の位置でグループに分割し、グループ内はAND、グループ間はORで評価する。
+        // (例: A AND B OR C は (A かつ B) または C として評価される。一般的な演算子の優先順位と同じく、ANDがORより強く結びつく)
+        val groups = mutableListOf<MutableList<RuleCondition>>()
+        rule.conditions.forEachIndexed { index, condition ->
+            if (index == 0 || condition.logicOperator == ConditionLogic.OR) {
+                groups.add(mutableListOf(condition))
+            } else {
+                groups.last().add(condition)
             }
         }
-        Log.d("BlockRepo", "  -> 適合")
-        return true
+
+        for (group in groups) {
+            var groupMatched = true
+            for (condition in group) {
+                val condMatched = when (condition) {
+                    is RegexCondition -> {
+                        val pattern = try { Pattern.compile(condition.pattern) } catch(e:Exception){ null }
+                        pattern?.let { p ->
+                            uniqueList.any { p.matcher(it).find() }
+                        } ?: false
+                    }
+                    is ContactCondition -> {
+                        val hasContact = uniqueList.any { isContactExists(it) }
+                        hasContact
+                    }
+                    is TimeCondition -> {
+                         isTimeMatched(condition)
+                    }
+                    else -> false
+                }
+
+                // 条件の反転 (NOT条件) 処理
+                val finalMatched = if (condition.isInverse) !condMatched else condMatched
+
+                Log.d("BlockRepo", "  条件判定 [${condition.getDescription()}] (結合=${condition.logicOperator}): マッチ=$condMatched, 反転=${condition.isInverse} -> 結果=$finalMatched")
+
+                if (!finalMatched) {
+                    groupMatched = false
+                    break
+                }
+            }
+            if (groupMatched) {
+                Log.d("BlockRepo", "  -> 適合 (AND条件グループが一致)")
+                return true
+            }
+        }
+
+        Log.d("BlockRepo", "  -> 不適合")
+        return false
     }
 
     private fun isTimeMatched(condition: TimeCondition): Boolean {
